@@ -3,9 +3,10 @@ import { fetchVideoDuration, formatDuration } from '../lib/wet3'
 
 type VideoDurationProps = {
   mediaId: string
+  overlay?: boolean
 }
 
-export function VideoDuration({ mediaId }: VideoDurationProps) {
+export function VideoDuration({ mediaId, overlay = false }: VideoDurationProps) {
   const [duration, setDuration] = useState<number | null | undefined>(undefined)
 
   useEffect(() => {
@@ -22,13 +23,17 @@ export function VideoDuration({ mediaId }: VideoDurationProps) {
     }
   }, [mediaId])
 
+  const className = overlay
+    ? `duration-badge${duration === undefined ? ' loading' : ''}`
+    : `media-duration${duration === undefined ? ' muted' : ''}`
+
   if (duration === undefined) {
-    return <span className="media-duration muted">…</span>
+    return <span className={className}>…</span>
   }
 
   if (duration === null) {
-    return null
+    return <span className={`${className} unavailable`}>--:--</span>
   }
 
-  return <span className="media-duration">{formatDuration(duration)}</span>
+  return <span className={className}>{formatDuration(duration)}</span>
 }

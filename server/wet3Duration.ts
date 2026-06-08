@@ -13,6 +13,11 @@ async function readPlaylistDuration(playlistUrl: string): Promise<number | null>
   }
 
   const playlistText = await response.text()
+
+  if (!playlistText.includes('#EXTM3U')) {
+    return null
+  }
+
   const variantLine = playlistText
     .split('\n')
     .map((line) => line.trim())
@@ -28,6 +33,44 @@ async function readPlaylistDuration(playlistUrl: string): Promise<number | null>
   )
 
   return total > 0 ? total : null
+}
+
+async function resolveStreamPlaylistUrl(streamPageUrl: string): Promise<string | null> {
+  let currentUrl = streamPageUrl
+
+  for (let hop = 0; hop < 6; hop += 1) {
+    const response = await fetch(currentUrl, { redirect: 'manual' })
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location')
+
+      if (!location) {
+        return null
+      }
+
+      currentUrl = new URL(location, currentUrl).href
+      continue
+    }
+
+    if (!response.ok) {
+      return null
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+    const body = await response.text()
+
+    if (
+      contentType.includes('mpegurl') ||
+      contentType.includes('m3u8') ||
+      body.startsWith('#EXTM3U')
+    ) {
+      return response.url
+    }
+
+    return null
+  }
+
+  return null
 }
 
 export async function fetchWet3VideoDuration(mediaId: string): Promise<number | null> {
@@ -53,7 +96,13 @@ export async function fetchWet3VideoDuration(mediaId: string): Promise<number | 
     ? item.streamUrl
     : `https://wet3.click${item.streamUrl}`
 
-  return readPlaylistDuration(streamUrl)
+  const playlistUrl = await resolveStreamPlaylistUrl(streamUrl)
+
+  if (!playlistUrl) {
+    return null
+  }
+
+  return readPlaylistDuration(playlistUrl)
 }
 
 export function createDurationMiddleware(): Connect.NextHandleFunction {

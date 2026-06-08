@@ -349,7 +349,10 @@ function ProfileView({ username }: { username: string }) {
                       loading="lazy"
                       onError={handleImageError}
                     />
-                    <span className="video-badge">▶</span>
+                    <span className="video-badge" aria-hidden="true">
+                      ▶
+                    </span>
+                    <VideoDuration mediaId={item.id} overlay />
                   </a>
                 ) : (
                   <a
@@ -371,7 +374,9 @@ function ProfileView({ username }: { username: string }) {
                   <span className="media-label" title={item.id}>
                     {mediaLabel(item)}
                   </span>
-                  {item.media_type === '2' ? <VideoDuration mediaId={item.id} /> : null}
+                  {item.media_type === '2' ? (
+                    <VideoDuration mediaId={item.id} />
+                  ) : null}
                 </div>
               </article>
             ))}

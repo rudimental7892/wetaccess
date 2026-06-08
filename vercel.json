@@ -5,7 +5,7 @@
       "destination": "https://wet3.click/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
