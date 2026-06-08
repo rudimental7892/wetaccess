@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/wet3-api/:path*",
+      "destination": "https://wet3.click/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

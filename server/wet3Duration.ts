@@ -58,7 +58,7 @@ export async function fetchWet3VideoDuration(mediaId: string): Promise<number | 
 
 export function createDurationMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
-    const match = req.url?.match(/^\/local-api\/duration\/([^/?]+)/)
+    const match = req.url?.match(/^\/(?:local-api|api)\/duration\/([^/?]+)/)
 
     if (!match) {
       next()

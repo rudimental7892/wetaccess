@@ -31,9 +31,6 @@ export function AppShell({ children, onHome, profileName }: AppShellProps) {
         )}
       </header>
       <main className="page">{children}</main>
-      <footer className="app-footer">
-        <span>wetaccess · media via wet3.click</span>
-      </footer>
     </div>
   )
 }

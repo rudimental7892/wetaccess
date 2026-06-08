@@ -75,7 +75,7 @@ export async function fetchVideoDuration(mediaId: string): Promise<number | null
 
   try {
     const response = await fetch(
-      `/local-api/duration/${encodeURIComponent(mediaId)}`,
+      `/api/duration/${encodeURIComponent(mediaId)}`,
     )
 
     if (!response.ok) {
