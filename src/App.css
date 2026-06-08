@@ -414,6 +414,10 @@
   gap: 18px;
 }
 
+.gallery-anchor {
+  scroll-margin-top: 76px;
+}
+
 .segmented {
   display: inline-flex;
   gap: 6px;
@@ -594,11 +598,18 @@
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 12px;
-  margin-top: 8px;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
+}
+
+.pagination-top {
+  margin: 0;
+}
+
+.pagination-bottom {
+  margin-top: 8px;
 }
 
 .pagination-track {

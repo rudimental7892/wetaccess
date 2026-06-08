@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import './App.css'
@@ -27,11 +28,44 @@ type Tab = 'all' | 'images' | 'videos'
 
 type AppRoute = { view: 'creators' } | { view: 'profile'; username: string }
 
+type CreatorsBrowseState = {
+  search: string
+  page: number
+}
+
 const MEDIA_PER_PAGE = 20
 const CREATORS_PER_PAGE = 24
+const BROWSE_HASH_KEY = 'wetaccess:browseHash'
 
 function mediaTypeLabel(type: MediaItem['media_type']): string {
   return type === '2' ? 'Video' : 'Image'
+}
+
+function parseCreatorsBrowseState(): CreatorsBrowseState {
+  const hash = window.location.hash
+  const queryStart = hash.indexOf('?')
+  const params = new URLSearchParams(
+    queryStart >= 0 ? hash.slice(queryStart + 1) : '',
+  )
+  const search = params.get('search')?.trim() ?? ''
+  const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1)
+
+  return { search, page }
+}
+
+function buildCreatorsHash({ search, page }: CreatorsBrowseState): string {
+  const params = new URLSearchParams()
+
+  if (search) {
+    params.set('search', search)
+  }
+
+  if (page > 1) {
+    params.set('page', String(page))
+  }
+
+  const query = params.toString()
+  return query ? `#/?${query}` : '#/'
 }
 
 function parseRoute(): AppRoute {
@@ -45,10 +79,17 @@ function parseRoute(): AppRoute {
 }
 
 function navigateToCreators() {
-  window.location.hash = '#/'
+  const savedBrowseHash = sessionStorage.getItem(BROWSE_HASH_KEY)
+  window.location.hash = savedBrowseHash || '#/'
 }
 
 function navigateToProfile(username: string) {
+  const currentHash = window.location.hash || '#/'
+
+  if (!currentHash.match(/^#\/user\//)) {
+    sessionStorage.setItem(BROWSE_HASH_KEY, currentHash)
+  }
+
   window.location.hash = `#/user/${encodeURIComponent(username)}`
 }
 
@@ -77,13 +118,32 @@ function App() {
 }
 
 function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => void }) {
-  const [searchInput, setSearchInput] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [page, setPage] = useState(1)
+  const initialBrowse = parseCreatorsBrowseState()
+  const [searchInput, setSearchInput] = useState(initialBrowse.search)
+  const [searchQuery, setSearchQuery] = useState(initialBrowse.search)
+  const [page, setPage] = useState(initialBrowse.page)
   const [creators, setCreators] = useState<Creator[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const syncBrowseFromHash = () => {
+      const { search, page: nextPage } = parseCreatorsBrowseState()
+      setSearchInput(search)
+      setSearchQuery(search)
+      setPage(nextPage)
+    }
+
+    window.addEventListener('hashchange', syncBrowseFromHash)
+    return () => window.removeEventListener('hashchange', syncBrowseFromHash)
+  }, [])
+
+  const updateBrowseHash = useCallback((next: CreatorsBrowseState) => {
+    const nextHash = buildCreatorsHash(next)
+    sessionStorage.setItem(BROWSE_HASH_KEY, nextHash)
+    window.location.hash = nextHash
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil(total / CREATORS_PER_PAGE))
 
@@ -110,9 +170,15 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setPage(1)
-    setSearchQuery(searchInput.trim())
+    updateBrowseHash({ search: searchInput.trim(), page: 1 })
   }
+
+  const goToCreatorsPage = useCallback(
+    (nextPage: number) => {
+      updateBrowseHash({ search: searchQuery, page: nextPage })
+    },
+    [searchQuery, updateBrowseHash],
+  )
 
   const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
     event.currentTarget.src = placeholderImage()
@@ -146,11 +212,7 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => {
-                setSearchInput('')
-                setSearchQuery('')
-                setPage(1)
-              }}
+              onClick={() => updateBrowseHash({ search: '', page: 1 })}
             >
               Clear
             </button>
@@ -194,8 +256,8 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
         <Pagination
           page={page}
           totalPages={totalPages}
-          onPrevious={() => setPage(page - 1)}
-          onNext={() => setPage(page + 1)}
+          onPrevious={() => goToCreatorsPage(page - 1)}
+          onNext={() => goToCreatorsPage(page + 1)}
         />
       ) : null}
     </>
@@ -208,6 +270,7 @@ function ProfileView({ username }: { username: string }) {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const galleryRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -270,6 +333,20 @@ function ProfileView({ username }: { username: string }) {
     currentPage * MEDIA_PER_PAGE,
   )
 
+  const scrollToGallery = useCallback(() => {
+    galleryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  const goToPreviousPage = useCallback(() => {
+    setCurrentPage((page) => Math.max(1, page - 1))
+    scrollToGallery()
+  }, [scrollToGallery])
+
+  const goToNextPage = useCallback(() => {
+    setCurrentPage((page) => Math.min(totalPages, page + 1))
+    scrollToGallery()
+  }, [scrollToGallery, totalPages])
+
   const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
     event.currentTarget.src = placeholderImage()
   }
@@ -309,7 +386,7 @@ function ProfileView({ username }: { username: string }) {
       {loading ? <LoadingGrid count={10} variant="media" /> : null}
 
       {!loading && !error ? (
-        <section className="media-section panel">
+        <section ref={galleryRef} className="media-section panel gallery-anchor">
           <div className="segmented" role="tablist" aria-label="Media filters">
             {(['all', 'images', 'videos'] as const).map((tab) => (
               <button
@@ -321,6 +398,7 @@ function ProfileView({ username }: { username: string }) {
                 onClick={() => {
                   setActiveTab(tab)
                   setCurrentPage(1)
+                  scrollToGallery()
                 }}
               >
                 {tab === 'all'
@@ -331,6 +409,17 @@ function ProfileView({ username }: { username: string }) {
               </button>
             ))}
           </div>
+
+          {visible.length > 0 && totalPages > 1 ? (
+            <Pagination
+              className="pagination-top"
+              label="Pagination top"
+              page={currentPage}
+              totalPages={totalPages}
+              onPrevious={goToPreviousPage}
+              onNext={goToNextPage}
+            />
+          ) : null}
 
           <div className="media-grid">
             {visible.map((item) => (
@@ -384,14 +473,16 @@ function ProfileView({ username }: { username: string }) {
 
           {visible.length === 0 ? (
             <p className="empty">No media in this tab.</p>
-          ) : (
+          ) : totalPages > 1 ? (
             <Pagination
+              className="pagination-bottom"
+              label="Pagination bottom"
               page={currentPage}
               totalPages={totalPages}
-              onPrevious={() => setCurrentPage(currentPage - 1)}
-              onNext={() => setCurrentPage(currentPage + 1)}
+              onPrevious={goToPreviousPage}
+              onNext={goToNextPage}
             />
-          )}
+          ) : null}
         </section>
       ) : null}
     </>

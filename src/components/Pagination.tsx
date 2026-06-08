@@ -3,6 +3,8 @@ type PaginationProps = {
   totalPages: number
   onPrevious: () => void
   onNext: () => void
+  className?: string
+  label?: string
 }
 
 export function Pagination({
@@ -10,9 +12,14 @@ export function Pagination({
   totalPages,
   onPrevious,
   onNext,
+  className,
+  label = 'Pagination',
 }: PaginationProps) {
   return (
-    <nav className="pagination" aria-label="Pagination">
+    <nav
+      className={['pagination', className].filter(Boolean).join(' ')}
+      aria-label={label}
+    >
       <button type="button" className="btn btn-ghost" onClick={onPrevious} disabled={page === 1}>
         ← Prev
       </button>
