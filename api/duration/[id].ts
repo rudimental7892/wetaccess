@@ -1,4 +1,4 @@
-import { fetchWet3VideoDuration } from '../../server/wet3Duration'
+import { fetchWet3VideoDuration } from '../../server/durationCore'
 
 type VercelRequest = {
   query: {

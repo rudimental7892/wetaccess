@@ -73,6 +73,38 @@ type ForYouDurationItem = {
   streamUrl: string
 }
 
+function decodeStreamTokenPlaylist(streamPageUrl: string): string | null {
+  try {
+    const url = new URL(streamPageUrl, WET3_ORIGIN)
+    const token = url.searchParams.get('token')
+
+    if (!token) {
+      return null
+    }
+
+    const payloadPart = token.split('.')[0]
+
+    if (!payloadPart) {
+      return null
+    }
+
+    const padded = payloadPart
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(payloadPart.length / 4) * 4, '=')
+
+    const payload = JSON.parse(atob(padded)) as { u?: string }
+
+    if (typeof payload.u === 'string' && payload.u.includes('.m3u8')) {
+      return payload.u
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function readClientPlaylistDuration(playlistUrl: string): Promise<number | null> {
   const response = await fetch(playlistUrl)
 
@@ -107,7 +139,7 @@ async function fetchVideoDurationFromProxy(mediaId: string): Promise<number | nu
   const forYouResponse = await fetch(`${API_BASE}/api/for-you`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ startId: mediaId, limit: 1 }),
+    body: JSON.stringify({ startId: mediaId, limit: 24 }),
   })
 
   if (!forYouResponse.ok) {
@@ -115,7 +147,7 @@ async function fetchVideoDurationFromProxy(mediaId: string): Promise<number | nu
   }
 
   const data = (await forYouResponse.json()) as { items?: ForYouDurationItem[] }
-  const item = data.items?.find((entry) => entry.id === mediaId) ?? data.items?.[0]
+  const item = data.items?.find((entry) => entry.id === mediaId)
 
   if (!item?.streamUrl) {
     return null
@@ -123,9 +155,18 @@ async function fetchVideoDurationFromProxy(mediaId: string): Promise<number | nu
 
   const streamPageUrl = item.streamUrl.startsWith('http')
     ? item.streamUrl
-    : `${API_BASE}${item.streamUrl}`
+    : `${WET3_ORIGIN}${item.streamUrl}`
 
-  const streamResponse = await fetch(streamPageUrl, { redirect: 'follow' })
+  const playlistFromToken = decodeStreamTokenPlaylist(streamPageUrl)
+
+  if (playlistFromToken) {
+    return readClientPlaylistDuration(playlistFromToken)
+  }
+
+  const streamResponse = await fetch(
+    item.streamUrl.startsWith('http') ? item.streamUrl : `${API_BASE}${item.streamUrl}`,
+    { redirect: 'follow' },
+  )
 
   if (!streamResponse.ok) {
     return null
