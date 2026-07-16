@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { IncomingMessage } from 'node:http'
 
-type VercelRequest = IncomingMessage & {
-  query: {
-    path?: string | string[]
-  }
-  body?: unknown
+type VercelRequest = {
   method?: string
+  url?: string
+  query: Record<string, string | string[] | undefined>
+  headers: Record<string, string | string[] | undefined>
+  body?: unknown
 }
 
 type VercelResponse = {
@@ -37,53 +36,51 @@ const HOP_BY_HOP = new Set([
   'content-length',
 ])
 
-function targetPath(req: VercelRequest): string {
-  const raw = req.query.path
-  if (Array.isArray(raw)) {
-    return raw.map((part) => decodeURIComponent(part)).join('/')
-  }
-  if (typeof raw === 'string' && raw.length > 0) {
-    return decodeURIComponent(raw)
-  }
-
-  const url = req.url ?? ''
-  const match = url.match(/^\/api\/wet3-api\/?([^?]*)/)
-  return match?.[1] ? decodeURIComponent(match[1]) : ''
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0]
+  return value
 }
 
 function rewriteLocation(location: string): string {
   if (location.startsWith('/')) {
     return `/wet3-api${location}`
   }
-
   if (location.startsWith(`${WET3_ORIGIN}/`)) {
     return `/wet3-api/${location.slice(`${WET3_ORIGIN}/`.length)}`
   }
-
   return location
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const path = targetPath(req)
-  const searchIndex = (req.url ?? '').indexOf('?')
-  const search = searchIndex >= 0 ? (req.url ?? '').slice(searchIndex) : ''
-  const targetUrl = `${WET3_ORIGIN}/${path}${search}`
+  const rawPath = req.query.path
+  const path = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath ?? '')
+
+  if (!path) {
+    res.status(400)
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ error: 'missing path' }))
+    return
+  }
+
+  // Preserve original query string except our path param.
+  const incomingUrl = new URL(req.url ?? '/', 'http://localhost')
+  incomingUrl.searchParams.delete('path')
+  const search = incomingUrl.searchParams.toString()
+  const targetUrl = `${WET3_ORIGIN}/${path}${search ? `?${search}` : ''}`
 
   const headers: Record<string, string> = {
-    'User-Agent':
-      (typeof req.headers['user-agent'] === 'string' && req.headers['user-agent']) ||
-      'Mozilla/5.0 (compatible; wetaccess-proxy/1.0)',
-    Accept: (typeof req.headers.accept === 'string' && req.headers.accept) || '*/*',
+    'User-Agent': headerValue(req.headers['user-agent']) || 'Mozilla/5.0 (compatible; wetaccess-proxy/1.0)',
+    Accept: headerValue(req.headers.accept) || '*/*',
     Cookie: `wet3_user_id=${randomUUID()}`,
   }
 
-  if (typeof req.headers['content-type'] === 'string') {
-    headers['Content-Type'] = req.headers['content-type']
+  const contentType = headerValue(req.headers['content-type'])
+  if (contentType) {
+    headers['Content-Type'] = contentType
   }
 
   const method = (req.method ?? 'GET').toUpperCase()
   let body: string | undefined
-
   if (method !== 'GET' && method !== 'HEAD' && req.body != null) {
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body)
     if (!headers['Content-Type']) {
@@ -114,13 +111,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader(key, value)
     })
 
-    // Avoid caching Turnstile/challenge shells or personalized HTML.
     if (!upstream.headers.get('cache-control')) {
       res.setHeader('cache-control', 'private, no-store')
     }
 
-    const buffer = Buffer.from(await upstream.arrayBuffer())
-    res.end(buffer)
+    res.end(Buffer.from(await upstream.arrayBuffer()))
   } catch (error) {
     res.status(502)
     res.setHeader('content-type', 'application/json')

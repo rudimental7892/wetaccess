@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/wet3-api/(.*)",
-      "destination": "/api/wet3-api/$1"
+      "destination": "/api/wet3-proxy?path=$1"
     },
     {
       "source": "/((?!api/).*)",
