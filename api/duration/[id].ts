@@ -9,8 +9,6 @@ type VercelRequest = {
 type VercelResponse = {
   status: (code: number) => VercelResponse
   json: (body: unknown) => void
-  setHeader: (name: string, value: string) => void
-  end: (body?: string) => void
 }
 
 export const config = {
@@ -29,10 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const duration = await fetchWet3VideoDuration(mediaId)
     res.status(200).json({ duration })
-  } catch (error) {
-    res.status(500).json({
-      duration: null,
-      error: error instanceof Error ? error.message : String(error),
-    })
+  } catch {
+    res.status(200).json({ duration: null })
   }
 }

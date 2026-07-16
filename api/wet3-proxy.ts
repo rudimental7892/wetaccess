@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { rewriteStreamLocation } from './_lib/hlsProxyCore'
 
 type VercelRequest = {
   method?: string
@@ -42,6 +41,40 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return value
 }
 
+function isBunnyOrCdn(hostname: string): boolean {
+  return (
+    hostname.endsWith('.b-cdn.net') ||
+    hostname.endsWith('.allaccessfans.co') ||
+    hostname === 'media.allaccessfans.co'
+  )
+}
+
+/** Keep wet3 relative redirects on /wet3-api; send Bunny CDN to HLS proxy. */
+function rewriteLocation(location: string): string {
+  try {
+    const absolute = location.startsWith('http')
+      ? location
+      : new URL(location, WET3_ORIGIN).href
+
+    if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
+      return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+    }
+
+    const host = new URL(absolute).hostname
+    if (isBunnyOrCdn(host)) {
+      return `/api/hls-proxy?url=${encodeURIComponent(absolute)}`
+    }
+  } catch {
+    // fall through
+  }
+
+  if (location.startsWith('/')) {
+    return `/wet3-api${location}`
+  }
+
+  return location
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const rawPath = req.query.path
   const path = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath ?? '')
@@ -53,15 +86,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // Preserve original query string except our path param.
   const incomingUrl = new URL(req.url ?? '/', 'http://localhost')
   incomingUrl.searchParams.delete('path')
   const search = incomingUrl.searchParams.toString()
   const targetUrl = `${WET3_ORIGIN}/${path}${search ? `?${search}` : ''}`
 
   const headers: Record<string, string> = {
-    'User-Agent': headerValue(req.headers['user-agent']) || 'Mozilla/5.0 (compatible; wetaccess-proxy/1.0)',
-    // Do not forward the browser Referer — wet3 now 403s stream-v2 when Referer is wetaccess.
+    'User-Agent':
+      headerValue(req.headers['user-agent']) || 'Mozilla/5.0 (compatible; wetaccess-proxy/1.0)',
+    // Never forward browser Referer — wet3 403s stream-v2 when Referer is wetaccess.
     Accept: '*/*',
     Referer: `${WET3_ORIGIN}/`,
     Origin: WET3_ORIGIN,
@@ -94,7 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const location = upstream.headers.get('location')
     if (location) {
-      res.setHeader('location', rewriteStreamLocation(location))
+      res.setHeader('location', rewriteLocation(location))
     }
 
     upstream.headers.forEach((value, key) => {
