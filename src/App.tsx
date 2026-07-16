@@ -17,11 +17,13 @@ import {
   type MediaItem,
   fetchCreators,
   fetchUserMedia,
+  formatMediaDate,
   imageUrl,
   mediaLabel,
   placeholderImage,
   streamUrl,
   thumbnailUrl,
+  wet3AssetUrl,
 } from './lib/wet3'
 
 type Tab = 'all' | 'images' | 'videos'
@@ -233,7 +235,7 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
               onClick={() => onOpenProfile(creator.u)}
             >
               <img
-                src={creator.p}
+                src={wet3AssetUrl(creator.p)}
                 alt=""
                 loading="lazy"
                 onError={handleImageError}
@@ -460,6 +462,9 @@ function ProfileView({ username }: { username: string }) {
                   </a>
                 )}
                 <div className="media-card-meta">
+                  <span className="media-date" title={item.createdAt ?? undefined}>
+                    {formatMediaDate(item.createdAt)}
+                  </span>
                   <span className="media-label" title={item.id}>
                     {mediaLabel(item)}
                   </span>

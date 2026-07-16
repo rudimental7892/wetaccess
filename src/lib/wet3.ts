@@ -5,6 +5,10 @@ export type MediaItem = {
   path: string
   username: string
   webp_thumb: string | null
+  /** ISO date (YYYY-MM-DD) when recoverable from the asset path */
+  createdAt: string | null
+  /** Milliseconds used for newest-first sorting */
+  sortKey: number
 }
 
 export type Creator = {
@@ -25,17 +29,41 @@ export type CreatorsResponse = {
 }
 
 const API_BASE = '/wet3-api'
-const SITE_BASE = `${API_BASE}`
 const WET3_ORIGIN = 'https://wet3.click'
 
 const durationCache = new Map<string, number | null>()
+
+/**
+ * wet3 now returns same-origin relative asset paths (`/media/optimized/...`,
+ * `/previews/...`). Those must go through the Vite `/wet3-api` proxy — raw
+ * `/media/...` hits the local app and 404s.
+ */
+export function wet3AssetUrl(path: string | null | undefined): string {
+  if (!path) {
+    return placeholderImage()
+  }
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  if (path.startsWith('/wet3-api/')) {
+    return path
+  }
+
+  if (path.startsWith('/')) {
+    return `${API_BASE}${path}`
+  }
+
+  return `${API_BASE}/${path}`
+}
 
 export function streamUrl(mediaId: string): string {
   return `${WET3_ORIGIN}/api/stream-v2/${mediaId}`
 }
 
 export function imageUrl(mediaId: string): string {
-  return `${SITE_BASE}/api/image/${mediaId}`
+  return wet3AssetUrl(`/api/image/${mediaId}`)
 }
 
 export function mediaLabel(item: MediaItem): string {
@@ -50,22 +78,114 @@ export function mediaLabel(item: MediaItem): string {
 
 export function thumbnailUrl(item: MediaItem): string {
   if (item.webp_thumb) {
-    if (item.webp_thumb.startsWith('http')) {
-      return item.webp_thumb
-    }
-
-    return `${SITE_BASE}${item.webp_thumb}`
+    return wet3AssetUrl(item.webp_thumb)
   }
 
   if (item.path.match(/\.(jpe?g|png|webp|gif)$/i)) {
-    return item.path
+    return wet3AssetUrl(item.path)
   }
 
-  return `${SITE_BASE}/api/image/${item.id}`
+  return imageUrl(item.id)
 }
 
 export function placeholderImage(): string {
-  return `${SITE_BASE}/blog-placeholder-3.jpg`
+  return `${API_BASE}/blog-placeholder-3.jpg`
+}
+
+/** Recover a publish/upload date from wet3/AAF/YouFanly asset paths. */
+export function extractMediaDate(path: string | null | undefined): string | null {
+  if (!path) {
+    return null
+  }
+
+  const aafDate = path.match(/\/video\/(\d{4}-\d{2}-\d{2})\//)
+  if (aafDate) {
+    return aafDate[1]
+  }
+
+  const isoDate = path.match(/(?:^|[/_-])(\d{4}-\d{2}-\d{2})(?:[/_-]|$)/)
+  if (isoDate) {
+    return isoDate[1]
+  }
+
+  const uploadMs = path.match(/upload-\d+-(\d{13})(?:\b|$)/)
+  if (uploadMs) {
+    const date = new Date(Number(uploadMs[1]))
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10)
+    }
+  }
+
+  const uploadSec = path.match(/upload-\d+-(\d{10})(?:\b|$)/)
+  if (uploadSec) {
+    const date = new Date(Number(uploadSec[1]) * 1000)
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10)
+    }
+  }
+
+  return null
+}
+
+function mediaSortKey(id: string, createdAt: string | null): number {
+  const numericId = Number(id)
+  if (Number.isFinite(numericId)) {
+    // Wet3/AAF media IDs trend upward with recency — best catalog order signal.
+    return numericId
+  }
+
+  if (createdAt) {
+    const fromDate = Date.parse(`${createdAt}T12:00:00.000Z`)
+    if (!Number.isNaN(fromDate)) {
+      return fromDate
+    }
+  }
+
+  const yfStamp = id.match(/(\d{10,13})$/)
+  if (yfStamp) {
+    const raw = Number(yfStamp[1])
+    return raw > 1e12 ? raw : raw * 1000
+  }
+
+  return 0
+}
+
+export function enrichMediaItem(
+  item: Omit<MediaItem, 'createdAt' | 'sortKey'> &
+    Partial<Pick<MediaItem, 'createdAt' | 'sortKey'>>,
+): MediaItem {
+  const createdAt = item.createdAt ?? extractMediaDate(item.path)
+  return {
+    ...item,
+    createdAt,
+    sortKey: item.sortKey ?? mediaSortKey(item.id, createdAt),
+  }
+}
+
+export function sortMediaNewestFirst(items: MediaItem[]): MediaItem[] {
+  return [...items].sort((a, b) => {
+    if (b.sortKey !== a.sortKey) {
+      return b.sortKey - a.sortKey
+    }
+    return b.id.localeCompare(a.id, undefined, { numeric: true })
+  })
+}
+
+export function formatMediaDate(createdAt: string | null): string {
+  if (!createdAt) {
+    return 'Unknown date'
+  }
+
+  const date = new Date(`${createdAt}T12:00:00.000Z`)
+  if (Number.isNaN(date.getTime())) {
+    return createdAt
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
 }
 
 type ForYouDurationItem = {
@@ -105,7 +225,14 @@ function decodeStreamTokenPlaylist(streamPageUrl: string): string | null {
   }
 }
 
-async function readClientPlaylistDuration(playlistUrl: string): Promise<number | null> {
+async function readClientPlaylistDuration(
+  playlistUrl: string,
+  depth = 0,
+): Promise<number | null> {
+  if (depth > 4) {
+    return null
+  }
+
   const response = await fetch(playlistUrl)
 
   if (!response.ok) {
@@ -118,24 +245,58 @@ async function readClientPlaylistDuration(playlistUrl: string): Promise<number |
     return null
   }
 
+  const infMatches = [...playlistText.matchAll(/#EXTINF:([\d.]+)/g)]
+
+  if (infMatches.length > 0) {
+    const total = infMatches.reduce((sum, match) => sum + Number.parseFloat(match[1]), 0)
+    return total > 0 ? total : null
+  }
+
   const variantLine = playlistText
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line && !line.startsWith('#'))
 
-  if (variantLine?.includes('.m3u8')) {
-    return readClientPlaylistDuration(new URL(variantLine, response.url).href)
+  if (variantLine?.includes('.m3u8') || variantLine?.includes('proxy.m3u8')) {
+    return readClientPlaylistDuration(new URL(variantLine, response.url).href, depth + 1)
   }
 
-  const total = [...playlistText.matchAll(/#EXTINF:([\d.]+)/g)].reduce(
-    (sum, match) => sum + Number.parseFloat(match[1]),
-    0,
-  )
+  return null
+}
 
-  return total > 0 ? total : null
+async function fetchVideoDurationFromStreamV2(mediaId: string): Promise<number | null> {
+  const response = await fetch(`${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`, {
+    redirect: 'manual',
+  })
+
+  let playlistUrl: string | null = null
+
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location')
+    if (location) {
+      playlistUrl = location.startsWith('http')
+        ? location
+        : location.startsWith('/wet3-api/')
+          ? location
+          : `${API_BASE}${location.startsWith('/') ? location : `/${location}`}`
+    }
+  } else if (response.ok) {
+    playlistUrl = response.url
+  }
+
+  if (!playlistUrl) {
+    return null
+  }
+
+  return readClientPlaylistDuration(playlistUrl)
 }
 
 async function fetchVideoDurationFromProxy(mediaId: string): Promise<number | null> {
+  const fromStreamV2 = await fetchVideoDurationFromStreamV2(mediaId)
+  if (fromStreamV2 !== null) {
+    return fromStreamV2
+  }
+
   const forYouResponse = await fetch(`${API_BASE}/api/for-you`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -261,13 +422,13 @@ export function parseMediaJson(html: string): MediaItem[] {
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, '\\')
 
-  const data = JSON.parse(raw) as MediaItem[]
+  const data = JSON.parse(raw) as Array<Omit<MediaItem, 'createdAt' | 'sortKey'>>
 
   if (!Array.isArray(data)) {
     throw new Error('Profile media payload was invalid')
   }
 
-  return data
+  return sortMediaNewestFirst(data.map((item) => enrichMediaItem(item)))
 }
 
 export async function fetchCreators(
@@ -301,5 +462,72 @@ export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
   }
 
   const html = await response.text()
+
+  // Real profile pages may still load the Turnstile script URL — only the
+  // challenge shell lacks mediaJson / uses the Security Check title.
+  const isChallengeShell =
+    html.includes('Security Check - Wet3') ||
+    (html.includes('Security Check') && !html.includes('mediaJson'))
+
+  if (isChallengeShell) {
+    try {
+      const fallback = await fetchUserMediaFromProfileApi(username)
+      if (fallback.length > 0) {
+        return fallback
+      }
+    } catch {
+      // ignore — surface the Turnstile cause below
+    }
+
+    throw new Error(
+      'wet3 Turnstile blocked /user/{username} (no mediaJson). Restart the Vite proxy so it injects wet3_user_id.',
+    )
+  }
+
+  if (!html.includes('mediaJson')) {
+    const fallback = await fetchUserMediaFromProfileApi(username)
+    if (fallback.length > 0) {
+      return fallback
+    }
+    throw new Error('No mediaJson in profile HTML and /api/profile returned 0 items')
+  }
+
   return parseMediaJson(html)
+}
+
+async function fetchUserMediaFromProfileApi(username: string): Promise<MediaItem[]> {
+  const response = await fetch(
+    `${API_BASE}/api/profile/${encodeURIComponent(username.toLowerCase())}`,
+  )
+
+  if (!response.ok) {
+    throw new Error(`Profile API failed (${response.status})`)
+  }
+
+  const data = (await response.json()) as {
+    media?: Array<{
+      id: string
+      path?: string | null
+      isVideo?: number | boolean
+      username?: string
+      webp_thumb?: string | null
+      src?: string
+    }>
+  }
+
+  const rows = data.media ?? []
+
+  return sortMediaNewestFirst(
+    rows.map((row) => {
+      const isVideo = row.isVideo === 1 || row.isVideo === true
+      return enrichMediaItem({
+        id: String(row.id),
+        media_type: isVideo ? '2' : '1',
+        src: row.src ?? 'aa',
+        path: row.path ?? '',
+        username: row.username ?? username,
+        webp_thumb: row.webp_thumb ?? null,
+      })
+    }),
+  )
 }
