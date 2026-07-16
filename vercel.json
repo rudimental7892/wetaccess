@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/wet3-api/:path*",
-      "destination": "https://wet3.click/:path*"
+      "source": "/wet3-api/(.*)",
+      "destination": "/api/wet3-api/$1"
     },
     {
       "source": "/((?!api/).*)",
