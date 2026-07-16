@@ -41,14 +41,6 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return value
 }
 
-function isBunnyOrCdn(hostname: string): boolean {
-  return (
-    hostname.endsWith('.b-cdn.net') ||
-    hostname.endsWith('.allaccessfans.co') ||
-    hostname === 'media.allaccessfans.co'
-  )
-}
-
 function hlsProxyPath(targetUrl: string): string {
   return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
 }
