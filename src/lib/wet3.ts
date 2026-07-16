@@ -59,7 +59,9 @@ export function wet3AssetUrl(path: string | null | undefined): string {
 }
 
 export function streamUrl(mediaId: string): string {
-  return `${WET3_ORIGIN}/api/stream-v2/${mediaId}`
+  // Stay on wetaccess so Bunny Referer gates can be satisfied by our HLS proxy.
+  // Direct links to wet3.click/api/stream-v2 fail when Referer is wetaccess (403).
+  return `${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`
 }
 
 export function imageUrl(mediaId: string): string {

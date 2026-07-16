@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { rewriteStreamLocation } from './_lib/hlsProxyCore'
 
 type VercelRequest = {
   method?: string
@@ -41,16 +42,6 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return value
 }
 
-function rewriteLocation(location: string): string {
-  if (location.startsWith('/')) {
-    return `/wet3-api${location}`
-  }
-  if (location.startsWith(`${WET3_ORIGIN}/`)) {
-    return `/wet3-api/${location.slice(`${WET3_ORIGIN}/`.length)}`
-  }
-  return location
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const rawPath = req.query.path
   const path = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath ?? '')
@@ -70,7 +61,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const headers: Record<string, string> = {
     'User-Agent': headerValue(req.headers['user-agent']) || 'Mozilla/5.0 (compatible; wetaccess-proxy/1.0)',
-    Accept: headerValue(req.headers.accept) || '*/*',
+    // Do not forward the browser Referer — wet3 now 403s stream-v2 when Referer is wetaccess.
+    Accept: '*/*',
+    Referer: `${WET3_ORIGIN}/`,
+    Origin: WET3_ORIGIN,
     Cookie: `wet3_user_id=${randomUUID()}`,
   }
 
@@ -100,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const location = upstream.headers.get('location')
     if (location) {
-      res.setHeader('location', rewriteLocation(location))
+      res.setHeader('location', rewriteStreamLocation(location))
     }
 
     upstream.headers.forEach((value, key) => {
