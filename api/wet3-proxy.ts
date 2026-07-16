@@ -1,9 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import {
-  aafStillUrlFromFakeHls,
-  hlsProxyPath,
-  rewriteStreamLocation,
-} from './_lib/hlsProxyCore'
 
 type VercelRequest = {
   method?: string
@@ -44,6 +39,85 @@ const HOP_BY_HOP = new Set([
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
   return value
+}
+
+function hlsProxyPath(targetUrl: string): string {
+  return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
+}
+
+/**
+ * wet3 stream-v2 maps AAF stills to a non-existent
+ * `/streaming/image/.../file.jpg.m3u8` playlist. The real asset is
+ * `/image/.../file.jpg` and requires an AllAccessFans Referer (via hls-proxy).
+ */
+function aafStillUrlFromFakeHls(nested: string): string | null {
+  try {
+    const url = new URL(nested)
+    if (!url.hostname.endsWith('allaccessfans.co')) {
+      return null
+    }
+    if (!url.pathname.includes('/streaming/image/')) {
+      return null
+    }
+    if (!/\.(jpe?g|png|gif|webp)\.m3u8$/i.test(url.pathname)) {
+      return null
+    }
+    url.pathname = url.pathname
+      .replace('/streaming/image/', '/image/')
+      .replace(/\.m3u8$/i, '')
+    return url.href
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keep wet3 relative redirects on /wet3-api; send Bunny CDN / AAF stills to HLS proxy.
+ */
+function rewriteLocation(location: string): string {
+  try {
+    const absolute = location.startsWith('http')
+      ? location
+      : new URL(location, WET3_ORIGIN).href
+    const parsed = new URL(absolute)
+
+    if (parsed.hostname.endsWith('.b-cdn.net')) {
+      return hlsProxyPath(absolute)
+    }
+
+    if (parsed.pathname.includes('/api/stream-v2/proxy')) {
+      const nested = parsed.searchParams.get('url')
+      if (nested) {
+        const still = aafStillUrlFromFakeHls(nested)
+        if (still) {
+          return hlsProxyPath(still)
+        }
+
+        const nestedHost = new URL(nested).hostname
+        if (nestedHost.endsWith('.b-cdn.net')) {
+          return hlsProxyPath(nested)
+        }
+      }
+      if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
+        return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+      }
+      if (location.startsWith('/')) {
+        return `/wet3-api${location}`
+      }
+    }
+
+    if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
+      return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+    }
+  } catch {
+    // fall through
+  }
+
+  if (location.startsWith('/')) {
+    return `/wet3-api${location}`
+  }
+
+  return location
 }
 
 /** Rewrite wet3-absolute API paths inside m3u8 bodies to stay on /wet3-api. */
@@ -147,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const location = upstream.headers.get('location')
     if (location) {
-      res.setHeader('location', rewriteStreamLocation(location))
+      res.setHeader('location', rewriteLocation(location))
     }
 
     upstream.headers.forEach((value, key) => {
@@ -163,8 +237,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const rawBody = Buffer.from(await upstream.arrayBuffer())
-    const contentType = upstream.headers.get('content-type')
-    res.end(rewritePlaylistBody(rawBody, contentType))
+    const upstreamContentType = upstream.headers.get('content-type')
+    res.end(rewritePlaylistBody(rawBody, upstreamContentType))
   } catch (error) {
     res.status(502)
     res.setHeader('content-type', 'application/json')
