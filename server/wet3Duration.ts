@@ -5,14 +5,33 @@ export { fetchWet3VideoDuration } from './durationCore'
 
 export function createDurationMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
-    const match = req.url?.match(/^\/(?:local-api|api)\/duration\/([^/?]+)/)
-
-    if (!match) {
+    const url = req.url ?? ''
+    if (!url.startsWith('/api/duration') && !url.startsWith('/local-api/duration')) {
       next()
       return
     }
 
-    const mediaId = decodeURIComponent(match[1])
+    let mediaId = ''
+    try {
+      const parsed = new URL(url, 'http://localhost')
+      mediaId = parsed.searchParams.get('id') || ''
+      if (!mediaId) {
+        const pathMatch = parsed.pathname.match(/\/duration\/([^/]+)/)
+        if (pathMatch) {
+          mediaId = decodeURIComponent(pathMatch[1])
+        }
+      }
+    } catch {
+      next()
+      return
+    }
+
+    if (!mediaId) {
+      res.statusCode = 400
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ duration: null }))
+      return
+    }
 
     void fetchWet3VideoDuration(mediaId)
       .then((duration) => {

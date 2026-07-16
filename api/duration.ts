@@ -10,7 +10,6 @@ type VercelResponse = {
   status: (code: number) => VercelResponse
   setHeader: (name: string, value: string | number) => void
   end: (body?: string | Buffer) => void
-  json: (body: unknown) => void
 }
 
 export const config = {
@@ -208,7 +207,6 @@ async function fetchWet3VideoDuration(mediaId: string): Promise<number | null> {
   const streamV2Playlist = await fetchStreamV2PlaylistUrl(mediaId)
 
   if (streamV2Playlist) {
-    // Prefer direct CDN URL when wet3 wraps Bunny/AAF in proxy.m3u8.
     try {
       const parsed = new URL(streamV2Playlist)
       const nested = parsed.searchParams.get('url')

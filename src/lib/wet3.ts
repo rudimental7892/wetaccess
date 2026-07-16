@@ -386,7 +386,7 @@ export async function fetchVideoDuration(mediaId: string): Promise<number | null
   }
 
   try {
-    const response = await fetch(`/api/duration/${encodeURIComponent(mediaId)}`)
+    const response = await fetch(`/api/duration?id=${encodeURIComponent(mediaId)}`)
     const contentType = response.headers.get('content-type') ?? ''
 
     if (response.ok && contentType.includes('application/json')) {
