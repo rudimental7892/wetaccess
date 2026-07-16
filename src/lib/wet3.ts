@@ -64,18 +64,6 @@ const WET3_ORIGIN = 'https://wet3.click'
 let dropsCache: Drop[] | null = null
 let dropsInflight: Promise<Drop[]> | null = null
 
-function dropFromSlim(row: Drop): Drop {
-  return {
-    ...row,
-    items_count:
-      typeof row.items_count === 'number'
-        ? row.items_count
-        : Array.isArray(row.items)
-          ? row.items.length
-          : 0,
-  }
-}
-
 const durationCache = new Map<string, number | null>()
 
 /**
@@ -739,26 +727,29 @@ export async function unlockAndFetchDrop(
   const required = drop.required_clicks
   onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
 
-  const maxAttempts = Math.min(80, Math.max(0, required - clickCount) + 4)
-  const batchSize = 6
+  // Sequential clicks — parallel batches race on wet3's counter and get rate-limited (502).
+  const maxAttempts = Math.min(120, Math.max(0, required - clickCount) + 8)
+  let failures = 0
 
-  for (let attempted = 0; attempted < maxAttempts && clickCount < required; ) {
-    const n = Math.min(batchSize, maxAttempts - attempted)
-    const batch = await Promise.all(
-      Array.from({ length: n }, () => postDropClick(dropId)),
-    )
-    attempted += n
-
-    for (const row of batch) {
+  for (let attempted = 0; attempted < maxAttempts && clickCount < required; attempted += 1) {
+    try {
+      const row = await postDropClick(dropId)
       if (typeof row.click_count === 'number') {
         clickCount = Math.max(clickCount, row.click_count)
+      } else if (!row.duplicate) {
+        clickCount += 1
       }
-    }
-
-    onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
-
-    if (batch.some((row) => row.unlocked) || clickCount >= required) {
-      break
+      failures = 0
+      onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
+      if (row.unlocked || clickCount >= required) {
+        break
+      }
+    } catch {
+      failures += 1
+      if (failures >= 5) {
+        throw new Error('Drop unlock failed — wet3 click API kept erroring. Try again.')
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400 * failures))
     }
   }
 
