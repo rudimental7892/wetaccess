@@ -41,6 +41,18 @@ export function rewriteStreamLocation(location: string): string {
     ? location
     : new URL(location, WET3_ORIGIN).href
 
+  try {
+    const parsed = new URL(absolute)
+    if (parsed.pathname.includes('/api/stream-v2/proxy')) {
+      const nested = parsed.searchParams.get('url')
+      if (nested && isAllowedHlsUrl(nested)) {
+        return hlsProxyPath(nested)
+      }
+    }
+  } catch {
+    // fall through
+  }
+
   if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
     return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
   }

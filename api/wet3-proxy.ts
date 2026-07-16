@@ -49,20 +49,40 @@ function isBunnyOrCdn(hostname: string): boolean {
   )
 }
 
-/** Keep wet3 relative redirects on /wet3-api; send Bunny CDN to HLS proxy. */
+function hlsProxyPath(targetUrl: string): string {
+  return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
+}
+
+/**
+ * Keep wet3 relative redirects on /wet3-api; send Bunny/AAF CDN to HLS proxy.
+ *
+ * Important: wet3's proxy.m3u8 playlists embed `/api/stream-v2/...` paths. On
+ * wetaccess those resolve to vercel.app/api/... (404). Unwrap to hls-proxy instead.
+ */
 function rewriteLocation(location: string): string {
   try {
     const absolute = location.startsWith('http')
       ? location
       : new URL(location, WET3_ORIGIN).href
+    const parsed = new URL(absolute)
+
+    // /api/stream-v2/proxy.m3u8?url=<cdn> → same-origin HLS proxy
+    if (parsed.pathname.includes('/api/stream-v2/proxy')) {
+      const nested = parsed.searchParams.get('url')
+      if (nested) {
+        const nestedHost = new URL(nested).hostname
+        if (isBunnyOrCdn(nestedHost)) {
+          return hlsProxyPath(nested)
+        }
+      }
+    }
 
     if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
       return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
     }
 
-    const host = new URL(absolute).hostname
-    if (isBunnyOrCdn(host)) {
-      return `/api/hls-proxy?url=${encodeURIComponent(absolute)}`
+    if (isBunnyOrCdn(parsed.hostname)) {
+      return hlsProxyPath(absolute)
     }
   } catch {
     // fall through
@@ -73,6 +93,41 @@ function rewriteLocation(location: string): string {
   }
 
   return location
+}
+
+/** Rewrite wet3-absolute API paths inside m3u8 bodies to stay on /wet3-api. */
+function rewritePlaylistBody(body: Buffer, contentType: string | null): Buffer {
+  const ct = contentType ?? ''
+  const head = body.subarray(0, 7).toString('utf8')
+  const isPlaylist =
+    ct.includes('mpegurl') || ct.includes('m3u8') || head.startsWith('#EXTM3U')
+
+  if (!isPlaylist) {
+    return body
+  }
+
+  const text = body.toString('utf8')
+  const rewritten = text
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) {
+        return line.replace(
+          /URI="(\/api\/[^"]+)"/gi,
+          (_m, path: string) => `URI="/wet3-api${path}"`,
+        )
+      }
+      if (trimmed.startsWith('/api/')) {
+        return `/wet3-api${trimmed}`
+      }
+      if (trimmed.startsWith(`${WET3_ORIGIN}/`)) {
+        return `/wet3-api/${trimmed.slice(`${WET3_ORIGIN}/`.length)}`
+      }
+      return line
+    })
+    .join('\n')
+
+  return Buffer.from(rewritten)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -142,7 +197,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('cache-control', 'private, no-store')
     }
 
-    res.end(Buffer.from(await upstream.arrayBuffer()))
+    const rawBody = Buffer.from(await upstream.arrayBuffer())
+    const contentType = upstream.headers.get('content-type')
+    res.end(rewritePlaylistBody(rawBody, contentType))
   } catch (error) {
     res.status(502)
     res.setHeader('content-type', 'application/json')
