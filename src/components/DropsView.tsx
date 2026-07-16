@@ -9,20 +9,19 @@ import {
 } from 'react'
 import { LoadingGrid } from './LoadingGrid'
 import { Pagination } from './Pagination'
-import { VideoDuration } from './VideoDuration'
 import {
   type Drop,
   type DropItem,
   dropItemCount,
   dropItemIsVideo,
+  dropItemOpenUrl,
+  dropItemThumbnailUrl,
   dropThumbnailUrl,
   fetchDrop,
   fetchDrops,
   formatDropRelease,
-  imageUrl,
+  invalidateDropsClientCache,
   placeholderImage,
-  streamUrl,
-  wet3AssetUrl,
 } from '../lib/wet3'
 
 type DropFilter = 'all' | 'unlocked' | 'locked'
@@ -339,6 +338,7 @@ export function DropDetailView({
 }) {
   const [drop, setDrop] = useState<Drop | null>(null)
   const [loading, setLoading] = useState(true)
+  const [unlocking, setUnlocking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const galleryRef = useRef<HTMLElement>(null)
@@ -348,18 +348,30 @@ export function DropDetailView({
 
     const load = async () => {
       setLoading(true)
+      setUnlocking(true)
       setError(null)
       setCurrentPage(1)
 
       try {
-        const data = await fetchDrop(dropId)
-        if (!cancelled) {
-          if (!data) {
-            setDrop(null)
-            setError('Drop not found')
-          } else {
-            setDrop(data)
-          }
+        const unlocked = await fetchDrop(dropId, { unlock: true, force: true })
+
+        if (cancelled) {
+          return
+        }
+
+        if (!unlocked) {
+          setDrop(null)
+          setError('Drop not found')
+          return
+        }
+
+        setDrop(unlocked)
+        invalidateDropsClientCache()
+
+        if (!unlocked.unlocked || !unlocked.items?.length) {
+          setError(
+            'Could not unlock this pack yet. Wet3 may be rate-limiting click farming — try again.',
+          )
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -368,6 +380,7 @@ export function DropDetailView({
         }
       } finally {
         if (!cancelled) {
+          setUnlocking(false)
           setLoading(false)
         }
       }
@@ -402,15 +415,15 @@ export function DropDetailView({
   }, [scrollToGallery, totalPages])
 
   const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
-    event.currentTarget.src = placeholderImage()
-  }
+    const img = event.currentTarget
+    const fallback = img.dataset.fallback
 
-  const itemThumb = (item: DropItem) => {
-    if (item.thumbnail) {
-      return wet3AssetUrl(item.thumbnail)
+    if (fallback && img.src !== fallback) {
+      img.src = fallback
+      return
     }
 
-    return imageUrl(item.id)
+    img.src = placeholderImage()
   }
 
   return (
@@ -431,7 +444,7 @@ export function DropDetailView({
         </div>
         <div>
           <h1 className="profile-title">
-            {loading ? `Drop #${dropId}` : (drop?.title ?? `Drop #${dropId}`)}
+            {loading && !drop ? `Drop #${dropId}` : (drop?.title ?? `Drop #${dropId}`)}
           </h1>
           <p className="profile-subtitle">
             {drop ? (
@@ -456,7 +469,9 @@ export function DropDetailView({
         {drop ? (
           <div className="stat-row">
             <span className="stat-pill">
-              <strong>{drop.unlocked ? 'Unlocked' : 'Locked'}</strong>
+              <strong>
+                {unlocking ? 'Unlocking…' : drop.unlocked ? 'Unlocked' : 'Locked'}
+              </strong>
             </span>
             <span className="stat-pill">
               <strong>{dropItemCount(drop)}</strong> items
@@ -471,13 +486,19 @@ export function DropDetailView({
         ) : null}
       </section>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {loading ? <LoadingGrid count={10} variant="media" /> : null}
+      {unlocking ? (
+        <p className="status">
+          Bypassing community clicks for this pack — fetching media…
+        </p>
+      ) : null}
 
-      {!loading && drop && !drop.unlocked ? (
+      {error ? <p className="status error">{error}</p> : null}
+      {loading && !drop ? <LoadingGrid count={10} variant="media" /> : null}
+
+      {!loading && drop && !drop.unlocked && !unlocking ? (
         <p className="empty">
-          This pack is still locked ({drop.click_count}/{drop.required_clicks} community
-          clicks). Media IDs are withheld until unlock.
+          This pack is still locked ({drop.click_count}/{drop.required_clicks}). Unlock
+          bypass did not finish — open it again to retry.
         </p>
       ) : null}
 
@@ -497,7 +518,9 @@ export function DropDetailView({
           <div className="media-grid">
             {visible.map((item) => {
               const isVideo = dropItemIsVideo(item)
-              const href = isVideo ? streamUrl(item.id) : imageUrl(item.id)
+              const href = dropItemOpenUrl(item)
+              const thumb = dropItemThumbnailUrl(item)
+              const thumbFallback = wet3PreviewFallback(item)
 
               return (
                 <article key={item.id} className="media-item">
@@ -509,9 +532,10 @@ export function DropDetailView({
                     aria-label={`${isVideo ? 'Watch' : 'View'} drop item ${item.id}`}
                   >
                     <img
-                      src={itemThumb(item)}
+                      src={thumb}
                       alt=""
                       loading="lazy"
+                      data-fallback={thumbFallback}
                       onError={handleImageError}
                     />
                     {isVideo ? (
@@ -520,10 +544,10 @@ export function DropDetailView({
                           ▶
                         </span>
                         {item.duration?.trim() ? (
-                          <span className="duration-badge">{item.duration.replace(/^00:/, '')}</span>
-                        ) : (
-                          <VideoDuration mediaId={item.id} overlay />
-                        )}
+                          <span className="duration-badge">
+                            {item.duration.replace(/^00:/, '')}
+                          </span>
+                        ) : null}
                       </>
                     ) : null}
                   </a>
@@ -534,8 +558,6 @@ export function DropDetailView({
                     </span>
                     {isVideo && item.duration?.trim() ? (
                       <span className="media-duration">{item.duration}</span>
-                    ) : isVideo ? (
-                      <VideoDuration mediaId={item.id} />
                     ) : null}
                   </div>
                 </article>
@@ -559,4 +581,8 @@ export function DropDetailView({
       ) : null}
     </>
   )
+}
+
+function wet3PreviewFallback(item: DropItem): string {
+  return `/wet3-api/previews/${encodeURIComponent(item.id)}.webp`
 }

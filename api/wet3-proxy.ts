@@ -19,7 +19,7 @@ export const config = {
     bodyParser: true,
     responseLimit: false,
   },
-  maxDuration: 30,
+  maxDuration: 60,
 }
 
 const WET3_ORIGIN = 'https://wet3.click'

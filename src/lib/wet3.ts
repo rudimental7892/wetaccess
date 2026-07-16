@@ -64,6 +64,18 @@ const WET3_ORIGIN = 'https://wet3.click'
 let dropsCache: Drop[] | null = null
 let dropsInflight: Promise<Drop[]> | null = null
 
+function dropFromSlim(row: Drop): Drop {
+  return {
+    ...row,
+    items_count:
+      typeof row.items_count === 'number'
+        ? row.items_count
+        : Array.isArray(row.items)
+          ? row.items.length
+          : 0,
+  }
+}
+
 const durationCache = new Map<string, number | null>()
 
 /**
@@ -507,6 +519,11 @@ export function dropItemIsVideo(item: DropItem): boolean {
     return true
   }
 
+  // YouFanly drop IDs often resolve via stream-v2 as still images.
+  if (item.id.startsWith('yf_')) {
+    return false
+  }
+
   const thumb = item.thumbnail ?? ''
   if (thumb.includes('/previews/')) {
     return true
@@ -532,6 +549,26 @@ export function dropItemCount(drop: Drop): number {
   return 0
 }
 
+export function dropItemThumbnailUrl(item: DropItem): string {
+  const thumb = item.thumbnail ?? ''
+  if (thumb && !thumb.includes('blog-placeholder')) {
+    return wet3AssetUrl(thumb)
+  }
+
+  // YF pack stills: stream-v2 returns the JPEG body (api/image is often a stub).
+  if (item.id.startsWith('yf_')) {
+    return streamUrl(item.id)
+  }
+
+  // Prefer wet3 preview path — /api/image/{id} 404s for many drop media IDs.
+  return wet3AssetUrl(`/previews/${encodeURIComponent(item.id)}.webp`)
+}
+
+export function dropItemOpenUrl(item: DropItem): string {
+  // stream-v2 serves AAF/Bunny HLS redirects and YF still JPEGs.
+  return streamUrl(item.id)
+}
+
 export function formatDropRelease(releaseAt: string | null | undefined): string {
   if (!releaseAt) {
     return 'Unknown release'
@@ -549,6 +586,11 @@ export function formatDropRelease(releaseAt: string | null | undefined): string 
   }).format(date)
 }
 
+export function invalidateDropsClientCache() {
+  dropsCache = null
+  dropsInflight = null
+}
+
 export async function fetchDrops(force = false): Promise<Drop[]> {
   if (!force && dropsCache) {
     return dropsCache
@@ -559,14 +601,15 @@ export async function fetchDrops(force = false): Promise<Drop[]> {
   }
 
   dropsInflight = (async () => {
-    const response = await fetch(`${API_BASE}/api/drops`)
+    // Slim catalog via wetaccess API (~0.5MB) — avoid proxying full 5MB /api/drops.
+    const response = await fetch('/api/drops')
 
     if (!response.ok) {
       throw new Error(`Drops request failed (${response.status})`)
     }
 
     const data = (await response.json()) as DropsResponse
-    const drops = Array.isArray(data.drops) ? data.drops : []
+    const drops = Array.isArray(data.drops) ? data.drops.map(dropFromSlim) : []
     dropsCache = drops
     return drops
   })()
@@ -578,9 +621,45 @@ export async function fetchDrops(force = false): Promise<Drop[]> {
   }
 }
 
-export async function fetchDrop(dropId: number): Promise<Drop | null> {
-  const drops = await fetchDrops()
-  return drops.find((drop) => drop.id === dropId) ?? null
+export async function fetchDrop(
+  dropId: number,
+  options: { unlock?: boolean; force?: boolean } = {},
+): Promise<Drop | null> {
+  const unlock = options.unlock !== false
+  const params = new URLSearchParams({ id: String(dropId) })
+  if (!unlock) {
+    params.set('unlock', '0')
+  }
+
+  const response = await fetch(`/api/drop?${params}`)
+
+  if (response.status === 404) {
+    return null
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(
+      detail
+        ? `Drop request failed (${response.status}): ${detail.slice(0, 180)}`
+        : `Drop request failed (${response.status})`,
+    )
+  }
+
+  const data = (await response.json()) as {
+    drop?: Drop
+    unlockedNow?: boolean
+  }
+
+  if (!data.drop) {
+    return null
+  }
+
+  if (data.unlockedNow || options.force) {
+    invalidateDropsClientCache()
+  }
+
+  return data.drop
 }
 
 export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
