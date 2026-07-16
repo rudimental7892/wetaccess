@@ -43,10 +43,24 @@ export function rewriteStreamLocation(location: string): string {
 
   try {
     const parsed = new URL(absolute)
+
+    if (parsed.hostname.endsWith('.b-cdn.net')) {
+      return hlsProxyPath(absolute)
+    }
+
     if (parsed.pathname.includes('/api/stream-v2/proxy')) {
       const nested = parsed.searchParams.get('url')
-      if (nested && isAllowedHlsUrl(nested)) {
-        return hlsProxyPath(nested)
+      if (nested) {
+        const nestedHost = new URL(nested).hostname
+        if (nestedHost.endsWith('.b-cdn.net')) {
+          return hlsProxyPath(nested)
+        }
+      }
+      if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
+        return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+      }
+      if (location.startsWith('/')) {
+        return `/wet3-api${location}`
       }
     }
   } catch {
@@ -57,8 +71,7 @@ export function rewriteStreamLocation(location: string): string {
     return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
   }
 
-  if (isAllowedHlsUrl(absolute) && !absolute.includes('/wet3-api/')) {
-    // Bunny (and similar) require Referer: wet3.click — browser origin can't satisfy that.
+  if (isAllowedHlsUrl(absolute) && absolute.includes('.b-cdn.net')) {
     return hlsProxyPath(absolute)
   }
 

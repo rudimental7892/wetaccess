@@ -54,10 +54,10 @@ function hlsProxyPath(targetUrl: string): string {
 }
 
 /**
- * Keep wet3 relative redirects on /wet3-api; send Bunny/AAF CDN to HLS proxy.
+ * Keep wet3 relative redirects on /wet3-api; send Bunny CDN to HLS proxy.
  *
- * Important: wet3's proxy.m3u8 playlists embed `/api/stream-v2/...` paths. On
- * wetaccess those resolve to vercel.app/api/... (404). Unwrap to hls-proxy instead.
+ * AAF stays on wet3's proxy.m3u8 (direct CDN fetch with wet3 Referer → 401).
+ * Playlists are rewritten below so `/api/stream-v2/...` becomes `/wet3-api/api/...`.
  */
 function rewriteLocation(location: string): string {
   try {
@@ -66,23 +66,31 @@ function rewriteLocation(location: string): string {
       : new URL(location, WET3_ORIGIN).href
     const parsed = new URL(absolute)
 
-    // /api/stream-v2/proxy.m3u8?url=<cdn> → same-origin HLS proxy
+    // Bunny only — requires Referer: wet3.click via our HLS proxy.
+    if (parsed.hostname.endsWith('.b-cdn.net')) {
+      return hlsProxyPath(absolute)
+    }
+
+    // wet3 proxy.m3u8?url=Bunny → HLS proxy; AAF stays on /wet3-api proxy.
     if (parsed.pathname.includes('/api/stream-v2/proxy')) {
       const nested = parsed.searchParams.get('url')
       if (nested) {
         const nestedHost = new URL(nested).hostname
-        if (isBunnyOrCdn(nestedHost)) {
+        if (nestedHost.endsWith('.b-cdn.net')) {
           return hlsProxyPath(nested)
         }
+      }
+      // AAF / other: keep on wet3-api so playlist body rewrite can fix /api/ paths
+      if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
+        return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+      }
+      if (location.startsWith('/')) {
+        return `/wet3-api${location}`
       }
     }
 
     if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
       return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
-    }
-
-    if (isBunnyOrCdn(parsed.hostname)) {
-      return hlsProxyPath(absolute)
     }
   } catch {
     // fall through
