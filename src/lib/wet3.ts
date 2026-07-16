@@ -309,11 +309,20 @@ async function fetchVideoDurationFromStreamV2(mediaId: string): Promise<number |
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location')
     if (location) {
-      playlistUrl = location.startsWith('http')
-        ? location
-        : location.startsWith('/wet3-api/')
-          ? location
-          : `${API_BASE}${location.startsWith('/') ? location : `/${location}`}`
+      // /api/hls-proxy is same-origin (not under /wet3-api). wet3 relative
+      // paths like /api/stream-v2/proxy.m3u8 stay on the wet3-api proxy.
+      if (location.startsWith('http')) {
+        playlistUrl = location
+      } else if (
+        location.startsWith('/api/hls-proxy') ||
+        location.startsWith('/wet3-api/')
+      ) {
+        playlistUrl = location
+      } else if (location.startsWith('/')) {
+        playlistUrl = `${API_BASE}${location}`
+      } else {
+        playlistUrl = `${API_BASE}/${location}`
+      }
     }
   } else if (response.ok) {
     playlistUrl = response.url
