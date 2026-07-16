@@ -1,0 +1,562 @@
+import {
+  type FormEvent,
+  type SyntheticEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { LoadingGrid } from './LoadingGrid'
+import { Pagination } from './Pagination'
+import { VideoDuration } from './VideoDuration'
+import {
+  type Drop,
+  type DropItem,
+  dropItemCount,
+  dropItemIsVideo,
+  dropThumbnailUrl,
+  fetchDrop,
+  fetchDrops,
+  formatDropRelease,
+  imageUrl,
+  placeholderImage,
+  streamUrl,
+  wet3AssetUrl,
+} from '../lib/wet3'
+
+type DropFilter = 'all' | 'unlocked' | 'locked'
+
+type DropsBrowseState = {
+  search: string
+  page: number
+  filter: DropFilter
+}
+
+const DROPS_PER_PAGE = 24
+const DROP_ITEMS_PER_PAGE = 20
+const DROPS_HASH_KEY = 'wetaccess:dropsHash'
+
+function parseDropsBrowseState(): DropsBrowseState {
+  const hash = window.location.hash
+  const queryStart = hash.indexOf('?')
+  const params = new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart + 1) : '')
+  const search = params.get('search')?.trim() ?? ''
+  const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1)
+  const filterParam = params.get('filter')
+  const filter: DropFilter =
+    filterParam === 'unlocked' || filterParam === 'locked' ? filterParam : 'all'
+
+  return { search, page, filter }
+}
+
+function buildDropsHash({ search, page, filter }: DropsBrowseState): string {
+  const params = new URLSearchParams()
+
+  if (search) {
+    params.set('search', search)
+  }
+
+  if (filter !== 'all') {
+    params.set('filter', filter)
+  }
+
+  if (page > 1) {
+    params.set('page', String(page))
+  }
+
+  const query = params.toString()
+  return query ? `#/drops?${query}` : '#/drops'
+}
+
+export function rememberDropsBrowseHash(hash = window.location.hash) {
+  if (hash.startsWith('#/drops') && !hash.match(/^#\/drops\/\d+/)) {
+    sessionStorage.setItem(DROPS_HASH_KEY, hash)
+  }
+}
+
+export function navigateToDropsList() {
+  const saved = sessionStorage.getItem(DROPS_HASH_KEY)
+  window.location.hash = saved || '#/drops'
+}
+
+export function navigateToDrop(dropId: number) {
+  rememberDropsBrowseHash()
+  window.location.hash = `#/drops/${dropId}`
+}
+
+function matchesDropSearch(drop: Drop, query: string): boolean {
+  if (!query) {
+    return true
+  }
+
+  const haystack = `${drop.username} ${drop.display_name} ${drop.title}`.toLowerCase()
+  return haystack.includes(query.toLowerCase())
+}
+
+function dropProgress(drop: Drop): number {
+  if (drop.required_clicks <= 0) {
+    return drop.unlocked ? 100 : 0
+  }
+
+  return Math.min(100, Math.round((drop.click_count / drop.required_clicks) * 100))
+}
+
+export function DropsListView({ onOpenDrop }: { onOpenDrop: (dropId: number) => void }) {
+  const initialBrowse = parseDropsBrowseState()
+  const [searchInput, setSearchInput] = useState(initialBrowse.search)
+  const [searchQuery, setSearchQuery] = useState(initialBrowse.search)
+  const [page, setPage] = useState(initialBrowse.page)
+  const [filter, setFilter] = useState<DropFilter>(initialBrowse.filter)
+  const [drops, setDrops] = useState<Drop[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    rememberDropsBrowseHash()
+
+    const syncBrowseFromHash = () => {
+      const next = parseDropsBrowseState()
+      setSearchInput(next.search)
+      setSearchQuery(next.search)
+      setPage(next.page)
+      setFilter(next.filter)
+      rememberDropsBrowseHash()
+    }
+
+    window.addEventListener('hashchange', syncBrowseFromHash)
+    return () => window.removeEventListener('hashchange', syncBrowseFromHash)
+  }, [])
+
+  const updateBrowseHash = useCallback((next: DropsBrowseState) => {
+    const nextHash = buildDropsHash(next)
+    sessionStorage.setItem(DROPS_HASH_KEY, nextHash)
+    window.location.hash = nextHash
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const data = await fetchDrops()
+        if (!cancelled) {
+          setDrops(data)
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setDrops([])
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load drops')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const filtered = useMemo(() => {
+    return drops.filter((drop) => {
+      if (filter === 'unlocked' && !drop.unlocked) {
+        return false
+      }
+
+      if (filter === 'locked' && drop.unlocked) {
+        return false
+      }
+
+      return matchesDropSearch(drop, searchQuery)
+    })
+  }, [drops, filter, searchQuery])
+
+  const unlockedCount = useMemo(
+    () => drops.filter((drop) => drop.unlocked).length,
+    [drops],
+  )
+  const lockedCount = drops.length - unlockedCount
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DROPS_PER_PAGE))
+  const visible = filtered.slice((page - 1) * DROPS_PER_PAGE, page * DROPS_PER_PAGE)
+
+  useEffect(() => {
+    if (page > totalPages) {
+      updateBrowseHash({ search: searchQuery, page: totalPages, filter })
+    }
+  }, [filter, page, searchQuery, totalPages, updateBrowseHash])
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    updateBrowseHash({ search: searchInput.trim(), page: 1, filter })
+  }
+
+  const goToPage = useCallback(
+    (nextPage: number) => {
+      updateBrowseHash({ search: searchQuery, page: nextPage, filter })
+    },
+    [filter, searchQuery, updateBrowseHash],
+  )
+
+  const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
+    event.currentTarget.src = placeholderImage()
+  }
+
+  return (
+    <>
+      <section className="hero">
+        <p className="hero-eyebrow">Exclusive packs</p>
+        <h1 className="hero-title">Drops</h1>
+        <p className="hero-copy">
+          {loading
+            ? 'Loading unlockable packs…'
+            : `${drops.length.toLocaleString()} packs · ${unlockedCount.toLocaleString()} unlocked · ${lockedCount.toLocaleString()} locked`}
+        </p>
+      </section>
+
+      <section className="panel search-panel">
+        <form className="search-row" onSubmit={submitSearch}>
+          <input
+            className="search-input"
+            type="search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search drops…"
+            aria-label="Search drops"
+          />
+          <button type="submit" className="btn btn-primary">
+            Search
+          </button>
+          {searchQuery ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => updateBrowseHash({ search: '', page: 1, filter })}
+            >
+              Clear
+            </button>
+          ) : null}
+        </form>
+
+        <div className="segmented" role="tablist" aria-label="Drop filters">
+          {(
+            [
+              ['all', `All (${drops.length})`],
+              ['unlocked', `Unlocked (${unlockedCount})`],
+              ['locked', `Locked (${lockedCount})`],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              className={`tab-btn${filter === value ? ' active' : ''}`}
+              aria-selected={filter === value}
+              onClick={() => updateBrowseHash({ search: searchQuery, page: 1, filter: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {error ? <p className="status error">{error}</p> : null}
+      {loading ? <LoadingGrid count={12} variant="creators" /> : null}
+
+      {!loading && !error ? (
+        <section className="drops-grid">
+          {visible.map((drop) => {
+            const items = dropItemCount(drop)
+            const progress = dropProgress(drop)
+
+            return (
+              <button
+                key={drop.id}
+                type="button"
+                className={`drop-card${drop.unlocked ? '' : ' locked'}`}
+                onClick={() => onOpenDrop(drop.id)}
+              >
+                <div className="drop-thumb-wrap">
+                  <img
+                    src={dropThumbnailUrl(drop.thumbnail)}
+                    alt=""
+                    loading="lazy"
+                    onError={handleImageError}
+                  />
+                  <span className={`drop-status${drop.unlocked ? ' open' : ''}`}>
+                    {drop.unlocked ? 'Unlocked' : 'Locked'}
+                  </span>
+                </div>
+                <div className="drop-card-body">
+                  <strong>@{drop.username}</strong>
+                  <span className="drop-title">{drop.title}</span>
+                  <span className="drop-meta">
+                    {items > 0 ? `${items} items · ` : ''}
+                    {formatDropRelease(drop.release_at)}
+                  </span>
+                  <div className="drop-progress" aria-hidden="true">
+                    <span className="drop-progress-fill" style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className="drop-clicks">
+                    {drop.click_count}/{drop.required_clicks} clicks
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </section>
+      ) : null}
+
+      {!loading && !error && visible.length === 0 ? (
+        <p className="empty">No drops matched that filter.</p>
+      ) : null}
+
+      {!loading && !error && visible.length > 0 ? (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPrevious={() => goToPage(page - 1)}
+          onNext={() => goToPage(page + 1)}
+        />
+      ) : null}
+    </>
+  )
+}
+
+export function DropDetailView({
+  dropId,
+  onOpenProfile,
+}: {
+  dropId: number
+  onOpenProfile: (username: string) => void
+}) {
+  const [drop, setDrop] = useState<Drop | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const galleryRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      setCurrentPage(1)
+
+      try {
+        const data = await fetchDrop(dropId)
+        if (!cancelled) {
+          if (!data) {
+            setDrop(null)
+            setError('Drop not found')
+          } else {
+            setDrop(data)
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setDrop(null)
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load drop')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [dropId])
+
+  const items = drop?.items ?? []
+  const totalPages = Math.max(1, Math.ceil(items.length / DROP_ITEMS_PER_PAGE))
+  const visible = items.slice(
+    (currentPage - 1) * DROP_ITEMS_PER_PAGE,
+    currentPage * DROP_ITEMS_PER_PAGE,
+  )
+
+  const scrollToGallery = useCallback(() => {
+    galleryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  const goToPreviousPage = useCallback(() => {
+    setCurrentPage((page) => Math.max(1, page - 1))
+    scrollToGallery()
+  }, [scrollToGallery])
+
+  const goToNextPage = useCallback(() => {
+    setCurrentPage((page) => Math.min(totalPages, page + 1))
+    scrollToGallery()
+  }, [scrollToGallery, totalPages])
+
+  const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
+    event.currentTarget.src = placeholderImage()
+  }
+
+  const itemThumb = (item: DropItem) => {
+    if (item.thumbnail) {
+      return wet3AssetUrl(item.thumbnail)
+    }
+
+    return imageUrl(item.id)
+  }
+
+  return (
+    <>
+      <section className="profile-hero">
+        <div className="profile-hero-top">
+          <div className="drop-detail-thumb" aria-hidden="true">
+            {drop ? (
+              <img
+                src={dropThumbnailUrl(drop.thumbnail)}
+                alt=""
+                onError={handleImageError}
+              />
+            ) : (
+              <span>?</span>
+            )}
+          </div>
+        </div>
+        <div>
+          <h1 className="profile-title">
+            {loading ? `Drop #${dropId}` : (drop?.title ?? `Drop #${dropId}`)}
+          </h1>
+          <p className="profile-subtitle">
+            {drop ? (
+              <>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => onOpenProfile(drop.username)}
+                >
+                  @{drop.username}
+                </button>
+                {' · '}
+                {formatDropRelease(drop.release_at)}
+              </>
+            ) : loading ? (
+              'Loading pack…'
+            ) : (
+              'Pack unavailable'
+            )}
+          </p>
+        </div>
+        {drop ? (
+          <div className="stat-row">
+            <span className="stat-pill">
+              <strong>{drop.unlocked ? 'Unlocked' : 'Locked'}</strong>
+            </span>
+            <span className="stat-pill">
+              <strong>{dropItemCount(drop)}</strong> items
+            </span>
+            <span className="stat-pill">
+              <strong>
+                {drop.click_count}/{drop.required_clicks}
+              </strong>{' '}
+              clicks
+            </span>
+          </div>
+        ) : null}
+      </section>
+
+      {error ? <p className="status error">{error}</p> : null}
+      {loading ? <LoadingGrid count={10} variant="media" /> : null}
+
+      {!loading && drop && !drop.unlocked ? (
+        <p className="empty">
+          This pack is still locked ({drop.click_count}/{drop.required_clicks} community
+          clicks). Media IDs are withheld until unlock.
+        </p>
+      ) : null}
+
+      {!loading && drop?.unlocked ? (
+        <section ref={galleryRef} className="media-section panel gallery-anchor">
+          {visible.length > 0 && totalPages > 1 ? (
+            <Pagination
+              className="pagination-top"
+              label="Pagination top"
+              page={currentPage}
+              totalPages={totalPages}
+              onPrevious={goToPreviousPage}
+              onNext={goToNextPage}
+            />
+          ) : null}
+
+          <div className="media-grid">
+            {visible.map((item) => {
+              const isVideo = dropItemIsVideo(item)
+              const href = isVideo ? streamUrl(item.id) : imageUrl(item.id)
+
+              return (
+                <article key={item.id} className="media-item">
+                  <a
+                    href={href}
+                    className="media-card"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`${isVideo ? 'Watch' : 'View'} drop item ${item.id}`}
+                  >
+                    <img
+                      src={itemThumb(item)}
+                      alt=""
+                      loading="lazy"
+                      onError={handleImageError}
+                    />
+                    {isVideo ? (
+                      <>
+                        <span className="video-badge" aria-hidden="true">
+                          ▶
+                        </span>
+                        {item.duration?.trim() ? (
+                          <span className="duration-badge">{item.duration.replace(/^00:/, '')}</span>
+                        ) : (
+                          <VideoDuration mediaId={item.id} overlay />
+                        )}
+                      </>
+                    ) : null}
+                  </a>
+                  <div className="media-card-meta">
+                    <span className="media-date">{item.price || 'Free'}</span>
+                    <span className="media-label" title={item.id}>
+                      {item.id}
+                    </span>
+                    {isVideo && item.duration?.trim() ? (
+                      <span className="media-duration">{item.duration}</span>
+                    ) : isVideo ? (
+                      <VideoDuration mediaId={item.id} />
+                    ) : null}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="empty">No media in this pack.</p>
+          ) : totalPages > 1 ? (
+            <Pagination
+              className="pagination-bottom"
+              label="Pagination bottom"
+              page={currentPage}
+              totalPages={totalPages}
+              onPrevious={goToPreviousPage}
+              onNext={goToNextPage}
+            />
+          ) : null}
+        </section>
+      ) : null}
+    </>
+  )
+}

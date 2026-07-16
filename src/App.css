@@ -75,6 +75,36 @@
   font-weight: 500;
 }
 
+.app-nav-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+
+.nav-tab {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-tab:hover {
+  color: var(--text);
+}
+
+.nav-tab.active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.95), #d40049);
+  box-shadow: 0 6px 16px rgba(255, 0, 85, 0.22);
+}
+
 .nav-pill,
 .nav-tag {
   border: 1px solid var(--border);
@@ -409,6 +439,162 @@
   text-transform: uppercase;
 }
 
+.drops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.drop-card {
+  display: grid;
+  gap: 12px;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+@media (hover: hover) {
+  .drop-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 0, 85, 0.28);
+    background: var(--bg-card-hover);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.drop-card:active {
+  transform: scale(0.98);
+}
+
+.drop-card.locked {
+  opacity: 0.92;
+}
+
+.drop-thumb-wrap {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.drop-thumb-wrap img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+}
+
+.drop-card.locked .drop-thumb-wrap img {
+  filter: saturate(0.7) brightness(0.72);
+}
+
+.drop-status {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.drop-status.open {
+  background: rgba(255, 0, 85, 0.88);
+}
+
+.drop-card-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.drop-card-body strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.drop-title,
+.drop-meta,
+.drop-clicks {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.drop-clicks {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.drop-progress {
+  margin-top: 4px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.drop-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+}
+
+.drop-detail-thumb {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+  box-shadow: 0 12px 32px rgba(255, 0, 85, 0.22);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.drop-detail-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-hover);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
 .media-section {
   display: grid;
   gap: 18px;
@@ -714,6 +900,16 @@
     gap: 8px;
   }
 
+  .app-nav-tabs {
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .nav-tab {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
   .app-brand-text {
     font-size: 18px;
   }
@@ -834,8 +1030,18 @@
     gap: 12px;
   }
 
+  .drops-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
   .creator-card {
     padding: 12px;
+    gap: 10px;
+  }
+
+  .drop-card {
+    padding: 10px;
     gap: 10px;
   }
 
@@ -861,7 +1067,8 @@
 
 @media (max-width: 360px) {
   .media-grid,
-  .creators-grid {
+  .creators-grid,
+  .drops-grid {
     grid-template-columns: 1fr;
   }
 }

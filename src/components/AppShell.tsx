@@ -3,10 +3,20 @@ import type { ReactNode } from 'react'
 type AppShellProps = {
   children: ReactNode
   onHome?: () => void
-  profileName?: string
+  activeNav?: 'creators' | 'drops'
+  breadcrumb?: string
+  backLabel?: string
+  onBack?: () => void
 }
 
-export function AppShell({ children, onHome, profileName }: AppShellProps) {
+export function AppShell({
+  children,
+  onHome,
+  activeNav = 'creators',
+  breadcrumb,
+  backLabel,
+  onBack,
+}: AppShellProps) {
   return (
     <div className="app">
       <header className="app-nav">
@@ -15,16 +25,32 @@ export function AppShell({ children, onHome, profileName }: AppShellProps) {
             <span className="app-brand-mark">WA</span>
             <span className="app-brand-text">wetaccess</span>
           </a>
-          {profileName ? (
+          <nav className="app-nav-tabs" aria-label="Primary">
+            <a
+              href="#/"
+              className={`nav-tab${activeNav === 'creators' ? ' active' : ''}`}
+              aria-current={activeNav === 'creators' ? 'page' : undefined}
+            >
+              Creators
+            </a>
+            <a
+              href="#/drops"
+              className={`nav-tab${activeNav === 'drops' ? ' active' : ''}`}
+              aria-current={activeNav === 'drops' ? 'page' : undefined}
+            >
+              Drops
+            </a>
+          </nav>
+          {breadcrumb ? (
             <nav className="breadcrumb" aria-label="Breadcrumb">
               <span className="breadcrumb-sep">/</span>
-              <span className="breadcrumb-current">@{profileName}</span>
+              <span className="breadcrumb-current">{breadcrumb}</span>
             </nav>
           ) : null}
         </div>
-        {profileName && onHome ? (
-          <button type="button" className="nav-pill" onClick={onHome}>
-            All creators
+        {onBack && backLabel ? (
+          <button type="button" className="nav-pill" onClick={onBack}>
+            {backLabel}
           </button>
         ) : (
           <span className="nav-tag">clone</span>

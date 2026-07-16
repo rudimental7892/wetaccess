@@ -9,6 +9,12 @@ import {
 } from 'react'
 import './App.css'
 import { AppShell } from './components/AppShell'
+import {
+  DropDetailView,
+  DropsListView,
+  navigateToDrop,
+  navigateToDropsList,
+} from './components/DropsView'
 import { LoadingGrid } from './components/LoadingGrid'
 import { Pagination } from './components/Pagination'
 import { VideoDuration } from './components/VideoDuration'
@@ -28,7 +34,11 @@ import {
 
 type Tab = 'all' | 'images' | 'videos'
 
-type AppRoute = { view: 'creators' } | { view: 'profile'; username: string }
+type AppRoute =
+  | { view: 'creators' }
+  | { view: 'drops' }
+  | { view: 'drop'; dropId: number }
+  | { view: 'profile'; username: string }
 
 type CreatorsBrowseState = {
   search: string
@@ -38,6 +48,7 @@ type CreatorsBrowseState = {
 const MEDIA_PER_PAGE = 20
 const CREATORS_PER_PAGE = 24
 const BROWSE_HASH_KEY = 'wetaccess:browseHash'
+const PROFILE_BACK_KEY = 'wetaccess:profileBack'
 
 function mediaTypeLabel(type: MediaItem['media_type']): string {
   return type === '2' ? 'Video' : 'Image'
@@ -77,6 +88,16 @@ function parseRoute(): AppRoute {
     return { view: 'profile', username: decodeURIComponent(profileMatch[1]) }
   }
 
+  const dropMatch = window.location.hash.match(/^#\/drops\/(\d+)/)
+
+  if (dropMatch) {
+    return { view: 'drop', dropId: Number(dropMatch[1]) }
+  }
+
+  if (window.location.hash.startsWith('#/drops')) {
+    return { view: 'drops' }
+  }
+
   return { view: 'creators' }
 }
 
@@ -88,11 +109,21 @@ function navigateToCreators() {
 function navigateToProfile(username: string) {
   const currentHash = window.location.hash || '#/'
 
-  if (!currentHash.match(/^#\/user\//)) {
+  if (currentHash.startsWith('#/drops')) {
+    sessionStorage.setItem(PROFILE_BACK_KEY, 'drops')
+    if (!currentHash.match(/^#\/drops\/\d+/)) {
+      sessionStorage.setItem('wetaccess:dropsHash', currentHash)
+    }
+  } else if (!currentHash.match(/^#\/user\//)) {
+    sessionStorage.setItem(PROFILE_BACK_KEY, 'creators')
     sessionStorage.setItem(BROWSE_HASH_KEY, currentHash)
   }
 
   window.location.hash = `#/user/${encodeURIComponent(username)}`
+}
+
+function profileBackTarget(): 'creators' | 'drops' {
+  return sessionStorage.getItem(PROFILE_BACK_KEY) === 'drops' ? 'drops' : 'creators'
 }
 
 function App() {
@@ -105,15 +136,46 @@ function App() {
   }, [])
 
   if (route.view === 'profile') {
+    const backTo = profileBackTarget()
+    const onBack = backTo === 'drops' ? navigateToDropsList : navigateToCreators
+
     return (
-      <AppShell profileName={route.username} onHome={navigateToCreators}>
+      <AppShell
+        activeNav={backTo}
+        breadcrumb={`@${route.username}`}
+        backLabel={backTo === 'drops' ? 'All drops' : 'All creators'}
+        onHome={onBack}
+        onBack={onBack}
+      >
         <ProfileView username={route.username} />
       </AppShell>
     )
   }
 
+  if (route.view === 'drop') {
+    return (
+      <AppShell
+        activeNav="drops"
+        breadcrumb={`#${route.dropId}`}
+        backLabel="All drops"
+        onHome={navigateToDropsList}
+        onBack={navigateToDropsList}
+      >
+        <DropDetailView dropId={route.dropId} onOpenProfile={navigateToProfile} />
+      </AppShell>
+    )
+  }
+
+  if (route.view === 'drops') {
+    return (
+      <AppShell activeNav="drops" onHome={navigateToCreators}>
+        <DropsListView onOpenDrop={navigateToDrop} />
+      </AppShell>
+    )
+  }
+
   return (
-    <AppShell onHome={navigateToCreators}>
+    <AppShell activeNav="creators" onHome={navigateToCreators}>
       <CreatorsView onOpenProfile={navigateToProfile} />
     </AppShell>
   )

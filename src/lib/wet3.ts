@@ -28,8 +28,41 @@ export type CreatorsResponse = {
   limit: number
 }
 
+export type DropItem = {
+  id: string
+  duration: string
+  price: string
+  isDropExclusive: number
+  thumbnail: string | null
+  player_url: string
+}
+
+export type Drop = {
+  id: number
+  username: string
+  display_name: string
+  title: string
+  thumbnail: string | null
+  release_at: string
+  required_clicks: number
+  click_count: number
+  unlocked: boolean
+  is_early_unlocked: boolean
+  time_passed: boolean
+  items_count?: number | null
+  items?: DropItem[]
+}
+
+export type DropsResponse = {
+  success?: boolean
+  drops: Drop[]
+}
+
 const API_BASE = '/wet3-api'
 const WET3_ORIGIN = 'https://wet3.click'
+
+let dropsCache: Drop[] | null = null
+let dropsInflight: Promise<Drop[]> | null = null
 
 const durationCache = new Map<string, number | null>()
 
@@ -454,6 +487,100 @@ export async function fetchCreators(
   }
 
   return response.json() as Promise<CreatorsResponse>
+}
+
+export function dropThumbnailUrl(path: string | null | undefined): string {
+  if (!path) {
+    return placeholderImage()
+  }
+
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
+    return wet3AssetUrl(path)
+  }
+
+  // Bare filenames occasionally appear in the catalog.
+  return wet3AssetUrl(`/media/${path}`)
+}
+
+export function dropItemIsVideo(item: DropItem): boolean {
+  if (item.duration?.trim()) {
+    return true
+  }
+
+  const thumb = item.thumbnail ?? ''
+  if (thumb.includes('/previews/')) {
+    return true
+  }
+
+  // Packs are mostly video; only treat clear static thumbs as images.
+  if (thumb && /\.(jpe?g|png|gif)$/i.test(thumb) && !thumb.includes('_thumb')) {
+    return false
+  }
+
+  return true
+}
+
+export function dropItemCount(drop: Drop): number {
+  if (Array.isArray(drop.items)) {
+    return drop.items.length
+  }
+
+  if (typeof drop.items_count === 'number') {
+    return drop.items_count
+  }
+
+  return 0
+}
+
+export function formatDropRelease(releaseAt: string | null | undefined): string {
+  if (!releaseAt) {
+    return 'Unknown release'
+  }
+
+  const date = new Date(releaseAt)
+  if (Number.isNaN(date.getTime())) {
+    return releaseAt
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
+}
+
+export async function fetchDrops(force = false): Promise<Drop[]> {
+  if (!force && dropsCache) {
+    return dropsCache
+  }
+
+  if (!force && dropsInflight) {
+    return dropsInflight
+  }
+
+  dropsInflight = (async () => {
+    const response = await fetch(`${API_BASE}/api/drops`)
+
+    if (!response.ok) {
+      throw new Error(`Drops request failed (${response.status})`)
+    }
+
+    const data = (await response.json()) as DropsResponse
+    const drops = Array.isArray(data.drops) ? data.drops : []
+    dropsCache = drops
+    return drops
+  })()
+
+  try {
+    return await dropsInflight
+  } finally {
+    dropsInflight = null
+  }
+}
+
+export async function fetchDrop(dropId: number): Promise<Drop | null> {
+  const drops = await fetchDrops()
+  return drops.find((drop) => drop.id === dropId) ?? null
 }
 
 export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
