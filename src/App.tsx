@@ -12,7 +12,6 @@ import { AppShell } from './components/AppShell'
 import {
   DropDetailView,
   DropsListView,
-  navigateToDrop,
   navigateToDropsList,
 } from './components/DropsView'
 import { LoadingGrid } from './components/LoadingGrid'
@@ -106,22 +105,6 @@ function navigateToCreators() {
   window.location.hash = savedBrowseHash || '#/'
 }
 
-function navigateToProfile(username: string) {
-  const currentHash = window.location.hash || '#/'
-
-  if (currentHash.startsWith('#/drops')) {
-    sessionStorage.setItem(PROFILE_BACK_KEY, 'drops')
-    if (!currentHash.match(/^#\/drops\/\d+/)) {
-      sessionStorage.setItem('wetaccess:dropsHash', currentHash)
-    }
-  } else if (!currentHash.match(/^#\/user\//)) {
-    sessionStorage.setItem(PROFILE_BACK_KEY, 'creators')
-    sessionStorage.setItem(BROWSE_HASH_KEY, currentHash)
-  }
-
-  window.location.hash = `#/user/${encodeURIComponent(username)}`
-}
-
 function profileBackTarget(): 'creators' | 'drops' {
   return sessionStorage.getItem(PROFILE_BACK_KEY) === 'drops' ? 'drops' : 'creators'
 }
@@ -161,7 +144,7 @@ function App() {
         onHome={navigateToDropsList}
         onBack={navigateToDropsList}
       >
-        <DropDetailView dropId={route.dropId} onOpenProfile={navigateToProfile} />
+        <DropDetailView dropId={route.dropId} />
       </AppShell>
     )
   }
@@ -169,19 +152,19 @@ function App() {
   if (route.view === 'drops') {
     return (
       <AppShell activeNav="drops" onHome={navigateToCreators}>
-        <DropsListView onOpenDrop={navigateToDrop} />
+        <DropsListView />
       </AppShell>
     )
   }
 
   return (
     <AppShell activeNav="creators" onHome={navigateToCreators}>
-      <CreatorsView onOpenProfile={navigateToProfile} />
+      <CreatorsView />
     </AppShell>
   )
 }
 
-function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => void }) {
+function CreatorsView() {
   const initialBrowse = parseCreatorsBrowseState()
   const [searchInput, setSearchInput] = useState(initialBrowse.search)
   const [searchQuery, setSearchQuery] = useState(initialBrowse.search)
@@ -290,11 +273,12 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
       {!loading && !error ? (
         <section className="creators-grid">
           {creators.map((creator) => (
-            <button
+            <a
               key={creator.u}
-              type="button"
               className="creator-card"
-              onClick={() => onOpenProfile(creator.u)}
+              href={`#/user/${encodeURIComponent(creator.u)}`}
+              target="_blank"
+              rel="noopener noreferrer"
             >
               <img
                 src={wet3AssetUrl(creator.p)}
@@ -307,7 +291,7 @@ function CreatorsView({ onOpenProfile }: { onOpenProfile: (username: string) => 
                 <span>{creator.d}</span>
                 <span className="creator-meta">{creator.ds} posts</span>
               </div>
-            </button>
+            </a>
           ))}
         </section>
       ) : null}

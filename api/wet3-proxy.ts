@@ -1,4 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import {
+  aafStillUrlFromFakeHls,
+  hlsProxyPath,
+  rewriteStreamLocation,
+} from './_lib/hlsProxyCore'
 
 type VercelRequest = {
   method?: string
@@ -39,60 +44,6 @@ const HOP_BY_HOP = new Set([
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
   return value
-}
-
-function hlsProxyPath(targetUrl: string): string {
-  return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
-}
-
-/**
- * Keep wet3 relative redirects on /wet3-api; send Bunny CDN to HLS proxy.
- *
- * AAF stays on wet3's proxy.m3u8 (direct CDN fetch with wet3 Referer → 401).
- * Playlists are rewritten below so `/api/stream-v2/...` becomes `/wet3-api/api/...`.
- */
-function rewriteLocation(location: string): string {
-  try {
-    const absolute = location.startsWith('http')
-      ? location
-      : new URL(location, WET3_ORIGIN).href
-    const parsed = new URL(absolute)
-
-    // Bunny only — requires Referer: wet3.click via our HLS proxy.
-    if (parsed.hostname.endsWith('.b-cdn.net')) {
-      return hlsProxyPath(absolute)
-    }
-
-    // wet3 proxy.m3u8?url=Bunny → HLS proxy; AAF stays on /wet3-api proxy.
-    if (parsed.pathname.includes('/api/stream-v2/proxy')) {
-      const nested = parsed.searchParams.get('url')
-      if (nested) {
-        const nestedHost = new URL(nested).hostname
-        if (nestedHost.endsWith('.b-cdn.net')) {
-          return hlsProxyPath(nested)
-        }
-      }
-      // AAF / other: keep on wet3-api so playlist body rewrite can fix /api/ paths
-      if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
-        return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
-      }
-      if (location.startsWith('/')) {
-        return `/wet3-api${location}`
-      }
-    }
-
-    if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
-      return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
-    }
-  } catch {
-    // fall through
-  }
-
-  if (location.startsWith('/')) {
-    return `/wet3-api${location}`
-  }
-
-  return location
 }
 
 /** Rewrite wet3-absolute API paths inside m3u8 bodies to stay on /wet3-api. */
@@ -143,6 +94,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const incomingUrl = new URL(req.url ?? '/', 'http://localhost')
   incomingUrl.searchParams.delete('path')
+
+  // AAF stills: wet3's proxy.m3u8 points at a missing *.jpg.m3u8 — unwrap to the real /image/ asset.
+  if (path.includes('api/stream-v2/proxy')) {
+    const nested = incomingUrl.searchParams.get('url')
+    const still = nested ? aafStillUrlFromFakeHls(nested) : null
+    if (still) {
+      res.status(302)
+      res.setHeader('location', hlsProxyPath(still))
+      res.setHeader('cache-control', 'private, no-store')
+      res.end()
+      return
+    }
+  }
+
   const search = incomingUrl.searchParams.toString()
   const targetUrl = `${WET3_ORIGIN}/${path}${search ? `?${search}` : ''}`
 
@@ -182,7 +147,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const location = upstream.headers.get('location')
     if (location) {
-      res.setHeader('location', rewriteLocation(location))
+      res.setHeader('location', rewriteStreamLocation(location))
     }
 
     upstream.headers.forEach((value, key) => {

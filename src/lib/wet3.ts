@@ -512,6 +512,11 @@ export function dropItemIsVideo(item: DropItem): boolean {
     return false
   }
 
+  // AAF still packs use numeric IDs with empty duration (stream-v2 → /image/…jpg).
+  if (/^\d+$/.test(item.id)) {
+    return false
+  }
+
   const thumb = item.thumbnail ?? ''
   if (thumb.includes('/previews/')) {
     return true
@@ -543,8 +548,8 @@ export function dropItemThumbnailUrl(item: DropItem): string {
     return wet3AssetUrl(thumb)
   }
 
-  // YF pack stills: stream-v2 returns the JPEG body (api/image is often a stub).
-  if (item.id.startsWith('yf_')) {
+  // YF pack stills + AAF stills: stream-v2 resolves to a JPEG (via proxy rewrite).
+  if (item.id.startsWith('yf_') || (!item.duration?.trim() && /^\d+$/.test(item.id))) {
     return streamUrl(item.id)
   }
 

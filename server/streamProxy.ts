@@ -1,6 +1,11 @@
 import type { Connect } from 'vite'
 import { randomUUID } from 'node:crypto'
-import { rewriteStreamLocation, wet3FetchHeaders } from './hlsProxyCore'
+import {
+  aafStillUrlFromFakeHls,
+  hlsProxyPath,
+  rewriteStreamLocation,
+  wet3FetchHeaders,
+} from './hlsProxyCore'
 
 const WET3_ORIGIN = 'https://wet3.click'
 
@@ -10,7 +15,28 @@ const WET3_ORIGIN = 'https://wet3.click'
  */
 export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
-    const match = req.url?.match(/^\/wet3-api\/api\/stream-v2\/([^/?#]+)/)
+    const url = req.url ?? ''
+    const proxyMatch = url.match(/^\/wet3-api\/api\/stream-v2\/proxy(?:\.m3u8)?\?/)
+    if (proxyMatch) {
+      try {
+        const parsed = new URL(url, 'http://localhost')
+        const nested = parsed.searchParams.get('url')
+        const still = nested ? aafStillUrlFromFakeHls(nested) : null
+        if (still) {
+          res.statusCode = 302
+          res.setHeader('Location', hlsProxyPath(still))
+          res.setHeader('Cache-Control', 'private, no-store')
+          res.end()
+          return
+        }
+      } catch {
+        // fall through to wet3 proxy
+      }
+      next()
+      return
+    }
+
+    const match = url.match(/^\/wet3-api\/api\/stream-v2\/([^/?#]+)/)
 
     if (!match) {
       next()
@@ -24,6 +50,11 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
     }
 
     const mediaId = decodeURIComponent(match[1])
+    if (mediaId === 'proxy' || mediaId === 'proxy.m3u8') {
+      next()
+      return
+    }
+
     const targetUrl = `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
 
     void fetch(targetUrl, {

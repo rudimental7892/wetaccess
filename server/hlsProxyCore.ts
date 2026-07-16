@@ -1,4 +1,6 @@
 export {
+  aafStillUrlFromFakeHls,
+  fetchHeadersForTarget,
   fetchProxiedMedia,
   hlsProxyPath,
   isAllowedHlsUrl,

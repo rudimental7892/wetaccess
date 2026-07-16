@@ -79,11 +79,6 @@ export function navigateToDropsList() {
   window.location.hash = saved || '#/drops'
 }
 
-export function navigateToDrop(dropId: number) {
-  rememberDropsBrowseHash()
-  window.location.hash = `#/drops/${dropId}`
-}
-
 function matchesDropSearch(drop: Drop, query: string): boolean {
   if (!query) {
     return true
@@ -101,7 +96,7 @@ function dropProgress(drop: Drop): number {
   return Math.min(100, Math.round((drop.click_count / drop.required_clicks) * 100))
 }
 
-export function DropsListView({ onOpenDrop }: { onOpenDrop: (dropId: number) => void }) {
+export function DropsListView() {
   const initialBrowse = parseDropsBrowseState()
   const [searchInput, setSearchInput] = useState(initialBrowse.search)
   const [searchQuery, setSearchQuery] = useState(initialBrowse.search)
@@ -276,11 +271,12 @@ export function DropsListView({ onOpenDrop }: { onOpenDrop: (dropId: number) => 
             const progress = dropProgress(drop)
 
             return (
-              <button
+              <a
                 key={drop.id}
-                type="button"
                 className={`drop-card${drop.unlocked ? '' : ' locked'}`}
-                onClick={() => onOpenDrop(drop.id)}
+                href={`#/drops/${drop.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
               >
                 <div className="drop-thumb-wrap">
                   <img
@@ -307,7 +303,7 @@ export function DropsListView({ onOpenDrop }: { onOpenDrop: (dropId: number) => 
                     {drop.click_count}/{drop.required_clicks} clicks
                   </span>
                 </div>
-              </button>
+              </a>
             )
           })}
         </section>
@@ -329,13 +325,7 @@ export function DropsListView({ onOpenDrop }: { onOpenDrop: (dropId: number) => 
   )
 }
 
-export function DropDetailView({
-  dropId,
-  onOpenProfile,
-}: {
-  dropId: number
-  onOpenProfile: (username: string) => void
-}) {
+export function DropDetailView({ dropId }: { dropId: number }) {
   const [drop, setDrop] = useState<Drop | null>(null)
   const [loading, setLoading] = useState(true)
   const [unlocking, setUnlocking] = useState(true)
@@ -485,13 +475,14 @@ export function DropDetailView({
           <p className="profile-subtitle">
             {drop ? (
               <>
-                <button
-                  type="button"
+                <a
                   className="link-btn"
-                  onClick={() => onOpenProfile(drop.username)}
+                  href={`#/user/${encodeURIComponent(drop.username)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   @{drop.username}
-                </button>
+                </a>
                 {' · '}
                 {formatDropRelease(drop.release_at)}
               </>

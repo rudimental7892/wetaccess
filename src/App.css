@@ -386,6 +386,9 @@
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  font: inherit;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
@@ -463,6 +466,9 @@
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  font: inherit;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
@@ -598,6 +604,7 @@
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .link-btn:hover {

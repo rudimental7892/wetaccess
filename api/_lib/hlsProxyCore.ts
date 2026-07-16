@@ -1,4 +1,5 @@
 const WET3_ORIGIN = 'https://wet3.click'
+const AAF_ORIGIN = 'https://allaccessfans.co'
 
 const ALLOWED_HOST_SUFFIXES = [
   '.b-cdn.net',
@@ -35,6 +36,35 @@ export function hlsProxyPath(targetUrl: string): string {
   return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
 }
 
+/**
+ * wet3 stream-v2 maps AAF stills to a non-existent
+ * `/streaming/image/.../file.jpg.m3u8` playlist. The real asset is
+ * `/image/.../file.jpg` and requires an AllAccessFans Referer.
+ */
+export function aafStillUrlFromFakeHls(nested: string): string | null {
+  try {
+    const url = new URL(nested)
+    if (!url.hostname.endsWith('allaccessfans.co')) {
+      return null
+    }
+
+    if (!url.pathname.includes('/streaming/image/')) {
+      return null
+    }
+
+    if (!/\.(jpe?g|png|gif|webp)\.m3u8$/i.test(url.pathname)) {
+      return null
+    }
+
+    url.pathname = url.pathname
+      .replace('/streaming/image/', '/image/')
+      .replace(/\.m3u8$/i, '')
+    return url.href
+  } catch {
+    return null
+  }
+}
+
 /** Rewrite Location from stream-v2 into a same-origin HLS proxy URL when needed. */
 export function rewriteStreamLocation(location: string): string {
   const absolute = location.startsWith('http')
@@ -51,6 +81,11 @@ export function rewriteStreamLocation(location: string): string {
     if (parsed.pathname.includes('/api/stream-v2/proxy')) {
       const nested = parsed.searchParams.get('url')
       if (nested) {
+        const still = aafStillUrlFromFakeHls(nested)
+        if (still) {
+          return hlsProxyPath(still)
+        }
+
         const nestedHost = new URL(nested).hostname
         if (nestedHost.endsWith('.b-cdn.net')) {
           return hlsProxyPath(nested)
@@ -120,6 +155,27 @@ export function wet3FetchHeaders(extra: Record<string, string> = {}): Record<str
   }
 }
 
+/** Pick CDN-appropriate Referer (AAF stills/videos 401 under wet3 Referer). */
+export function fetchHeadersForTarget(
+  targetUrl: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  try {
+    const host = new URL(targetUrl).hostname
+    if (host.endsWith('allaccessfans.co')) {
+      return wet3FetchHeaders({
+        Referer: `${AAF_ORIGIN}/`,
+        Origin: AAF_ORIGIN,
+        ...extra,
+      })
+    }
+  } catch {
+    // fall through
+  }
+
+  return wet3FetchHeaders(extra)
+}
+
 export async function fetchProxiedMedia(targetUrl: string): Promise<{
   status: number
   contentType: string | null
@@ -137,7 +193,7 @@ export async function fetchProxiedMedia(targetUrl: string): Promise<{
 
   const response = await fetch(targetUrl, {
     redirect: 'follow',
-    headers: wet3FetchHeaders(),
+    headers: fetchHeadersForTarget(targetUrl),
   })
 
   const contentType = response.headers.get('content-type')
