@@ -12,15 +12,15 @@ import { Pagination } from './Pagination'
 import {
   type Drop,
   type DropItem,
+  type DropUnlockProgress,
   dropItemCount,
   dropItemIsVideo,
   dropItemOpenUrl,
   dropItemThumbnailUrl,
   dropThumbnailUrl,
-  fetchDrop,
   fetchDrops,
   formatDropRelease,
-  invalidateDropsClientCache,
+  unlockAndFetchDrop,
   placeholderImage,
 } from '../lib/wet3'
 
@@ -338,7 +338,8 @@ export function DropDetailView({
 }) {
   const [drop, setDrop] = useState<Drop | null>(null)
   const [loading, setLoading] = useState(true)
-  const [unlocking, setUnlocking] = useState(false)
+  const [unlocking, setUnlocking] = useState(true)
+  const [progress, setProgress] = useState<DropUnlockProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const galleryRef = useRef<HTMLElement>(null)
@@ -351,9 +352,32 @@ export function DropDetailView({
       setUnlocking(true)
       setError(null)
       setCurrentPage(1)
+      setProgress({ phase: 'loading', clickCount: 0, requiredClicks: 0 })
 
       try {
-        const unlocked = await fetchDrop(dropId, { unlock: true, force: true })
+        // Show pack metadata immediately from the slim catalog cache when possible.
+        const catalog = await fetchDrops()
+        const preview = catalog.find((row) => row.id === dropId) ?? null
+        if (!cancelled && preview) {
+          setDrop(preview)
+          setLoading(false)
+        }
+
+        const unlocked = await unlockAndFetchDrop(dropId, (next) => {
+          if (!cancelled) {
+            setProgress(next)
+            setUnlocking(next.phase === 'unlocking' || next.phase === 'refreshing' || next.phase === 'loading')
+            setDrop((current) =>
+              current
+                ? {
+                    ...current,
+                    click_count: next.clickCount,
+                    required_clicks: next.requiredClicks || current.required_clicks,
+                  }
+                : current,
+            )
+          }
+        })
 
         if (cancelled) {
           return
@@ -366,7 +390,6 @@ export function DropDetailView({
         }
 
         setDrop(unlocked)
-        invalidateDropsClientCache()
 
         if (!unlocked.unlocked || !unlocked.items?.length) {
           setError(
@@ -375,13 +398,13 @@ export function DropDetailView({
         }
       } catch (loadError) {
         if (!cancelled) {
-          setDrop(null)
           setError(loadError instanceof Error ? loadError.message : 'Failed to load drop')
         }
       } finally {
         if (!cancelled) {
           setUnlocking(false)
           setLoading(false)
+          setProgress((current) => (current ? { ...current, phase: 'done' } : current))
         }
       }
     }
@@ -426,6 +449,21 @@ export function DropDetailView({
     img.src = placeholderImage()
   }
 
+  const progressPct =
+    progress && progress.requiredClicks > 0
+      ? Math.min(100, Math.round((progress.clickCount / progress.requiredClicks) * 100))
+      : 0
+
+  const unlockStatusLabel = unlocking
+    ? progress?.phase === 'refreshing'
+      ? 'Refreshing pack…'
+      : progress?.phase === 'loading'
+        ? 'Loading pack…'
+        : 'Unlocking…'
+    : drop?.unlocked
+      ? 'Unlocked'
+      : 'Locked'
+
   return (
     <>
       <section className="profile-hero">
@@ -443,9 +481,7 @@ export function DropDetailView({
           </div>
         </div>
         <div>
-          <h1 className="profile-title">
-            {loading && !drop ? `Drop #${dropId}` : (drop?.title ?? `Drop #${dropId}`)}
-          </h1>
+          <h1 className="profile-title">{drop?.title ?? `Drop #${dropId}`}</h1>
           <p className="profile-subtitle">
             {drop ? (
               <>
@@ -469,9 +505,7 @@ export function DropDetailView({
         {drop ? (
           <div className="stat-row">
             <span className="stat-pill">
-              <strong>
-                {unlocking ? 'Unlocking…' : drop.unlocked ? 'Unlocked' : 'Locked'}
-              </strong>
+              <strong>{unlockStatusLabel}</strong>
             </span>
             <span className="stat-pill">
               <strong>{dropItemCount(drop)}</strong> items
@@ -487,8 +521,17 @@ export function DropDetailView({
       </section>
 
       {unlocking ? (
-        <p className="status">
-          Bypassing community clicks for this pack — fetching media…
+        <p className="status unlock-status">
+          {progress?.phase === 'refreshing'
+            ? 'Pack unlocked — loading media…'
+            : progress?.phase === 'loading'
+              ? 'Loading drop catalog…'
+              : `Unlocking without ads… ${progress?.clickCount ?? 0}/${progress?.requiredClicks || drop?.required_clicks || '?'} clicks`}
+          {progress && progress.requiredClicks > 0 ? (
+            <span className="drop-progress unlock-progress" aria-hidden="true">
+              <span className="drop-progress-fill" style={{ width: `${progressPct}%` }} />
+            </span>
+          ) : null}
         </p>
       ) : null}
 

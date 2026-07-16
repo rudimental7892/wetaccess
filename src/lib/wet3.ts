@@ -589,6 +589,59 @@ export function formatDropRelease(releaseAt: string | null | undefined): string 
 export function invalidateDropsClientCache() {
   dropsCache = null
   dropsInflight = null
+  try {
+    sessionStorage.removeItem('wetaccess:dropsSlim')
+    sessionStorage.removeItem('wetaccess:dropsSlimAt')
+  } catch {
+    // ignore
+  }
+}
+
+function slimDropForList(drop: Drop): Drop {
+  const itemsCount = Array.isArray(drop.items)
+    ? drop.items.length
+    : typeof drop.items_count === 'number'
+      ? drop.items_count
+      : 0
+  const { items: _items, ...rest } = drop
+  return { ...rest, items_count: itemsCount }
+}
+
+function readSessionDrops(): Drop[] | null {
+  try {
+    const at = Number(sessionStorage.getItem('wetaccess:dropsSlimAt') || 0)
+    if (!at || Date.now() - at > 5 * 60 * 1000) {
+      return null
+    }
+    const raw = sessionStorage.getItem('wetaccess:dropsSlim')
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as Drop[]
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeSessionDrops(drops: Drop[]) {
+  try {
+    sessionStorage.setItem('wetaccess:dropsSlim', JSON.stringify(drops.map(slimDropForList)))
+    sessionStorage.setItem('wetaccess:dropsSlimAt', String(Date.now()))
+  } catch {
+    // quota — ignore
+  }
+}
+
+async function fetchWet3DropsRaw(): Promise<Drop[]> {
+  const response = await fetch(`${API_BASE}/api/drops`)
+
+  if (!response.ok) {
+    throw new Error(`Drops request failed (${response.status})`)
+  }
+
+  const data = (await response.json()) as DropsResponse
+  return Array.isArray(data.drops) ? data.drops : []
 }
 
 export async function fetchDrops(force = false): Promise<Drop[]> {
@@ -596,21 +649,23 @@ export async function fetchDrops(force = false): Promise<Drop[]> {
     return dropsCache
   }
 
+  if (!force) {
+    const session = readSessionDrops()
+    if (session?.length) {
+      dropsCache = session
+      return session
+    }
+  }
+
   if (!force && dropsInflight) {
     return dropsInflight
   }
 
   dropsInflight = (async () => {
-    // Slim catalog via wetaccess API (~0.5MB) — avoid proxying full 5MB /api/drops.
-    const response = await fetch('/api/drops')
-
-    if (!response.ok) {
-      throw new Error(`Drops request failed (${response.status})`)
-    }
-
-    const data = (await response.json()) as DropsResponse
-    const drops = Array.isArray(data.drops) ? data.drops.map(dropFromSlim) : []
+    const raw = await fetchWet3DropsRaw()
+    const drops = raw.map(slimDropForList)
     dropsCache = drops
+    writeSessionDrops(drops)
     return drops
   })()
 
@@ -621,45 +676,119 @@ export async function fetchDrops(force = false): Promise<Drop[]> {
   }
 }
 
+export type DropUnlockProgress = {
+  phase: 'loading' | 'unlocking' | 'refreshing' | 'done'
+  clickCount: number
+  requiredClicks: number
+}
+
+async function postDropClick(dropId: number): Promise<{
+  success?: boolean
+  click_count?: number
+  required_clicks?: number
+  unlocked?: boolean
+  duplicate?: boolean
+}> {
+  const response = await fetch(`${API_BASE}/api/drops/click`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ drop_id: dropId }),
+  })
+
+  const text = await response.text()
+  try {
+    return JSON.parse(text) as {
+      success?: boolean
+      click_count?: number
+      required_clicks?: number
+      unlocked?: boolean
+      duplicate?: boolean
+    }
+  } catch {
+    throw new Error(`Drop click failed (${response.status})`)
+  }
+}
+
+/**
+ * Farm community clicks through wet3-proxy (fresh guest cookie per request),
+ * then reload the catalog so pack items appear.
+ */
+export async function unlockAndFetchDrop(
+  dropId: number,
+  onProgress?: (progress: DropUnlockProgress) => void,
+): Promise<Drop | null> {
+  onProgress?.({ phase: 'loading', clickCount: 0, requiredClicks: 0 })
+
+  let catalog = await fetchWet3DropsRaw()
+  let drop = catalog.find((row) => row.id === dropId) ?? null
+
+  if (!drop) {
+    return null
+  }
+
+  if (drop.unlocked && Array.isArray(drop.items) && drop.items.length > 0) {
+    onProgress?.({
+      phase: 'done',
+      clickCount: drop.click_count,
+      requiredClicks: drop.required_clicks,
+    })
+    return drop
+  }
+
+  let clickCount = drop.click_count
+  const required = drop.required_clicks
+  onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
+
+  const maxAttempts = Math.min(80, Math.max(0, required - clickCount) + 4)
+  const batchSize = 6
+
+  for (let attempted = 0; attempted < maxAttempts && clickCount < required; ) {
+    const n = Math.min(batchSize, maxAttempts - attempted)
+    const batch = await Promise.all(
+      Array.from({ length: n }, () => postDropClick(dropId)),
+    )
+    attempted += n
+
+    for (const row of batch) {
+      if (typeof row.click_count === 'number') {
+        clickCount = Math.max(clickCount, row.click_count)
+      }
+    }
+
+    onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
+
+    if (batch.some((row) => row.unlocked) || clickCount >= required) {
+      break
+    }
+  }
+
+  onProgress?.({ phase: 'refreshing', clickCount, requiredClicks: required })
+  catalog = await fetchWet3DropsRaw()
+  drop = catalog.find((row) => row.id === dropId) ?? drop
+
+  // Refresh slim list cache without retaining every unlocked pack's items in sessionStorage.
+  dropsCache = catalog.map(slimDropForList)
+  writeSessionDrops(dropsCache)
+
+  onProgress?.({
+    phase: 'done',
+    clickCount: drop?.click_count ?? clickCount,
+    requiredClicks: drop?.required_clicks ?? required,
+  })
+
+  return drop
+}
+
 export async function fetchDrop(
   dropId: number,
   options: { unlock?: boolean; force?: boolean } = {},
 ): Promise<Drop | null> {
-  const unlock = options.unlock !== false
-  const params = new URLSearchParams({ id: String(dropId) })
-  if (!unlock) {
-    params.set('unlock', '0')
+  if (options.unlock === false) {
+    const drops = await fetchDrops(options.force)
+    return drops.find((drop) => drop.id === dropId) ?? null
   }
 
-  const response = await fetch(`/api/drop?${params}`)
-
-  if (response.status === 404) {
-    return null
-  }
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(
-      detail
-        ? `Drop request failed (${response.status}): ${detail.slice(0, 180)}`
-        : `Drop request failed (${response.status})`,
-    )
-  }
-
-  const data = (await response.json()) as {
-    drop?: Drop
-    unlockedNow?: boolean
-  }
-
-  if (!data.drop) {
-    return null
-  }
-
-  if (data.unlockedNow || options.force) {
-    invalidateDropsClientCache()
-  }
-
-  return data.drop
+  return unlockAndFetchDrop(dropId)
 }
 
 export async function fetchUserMedia(username: string): Promise<MediaItem[]> {

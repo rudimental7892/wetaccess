@@ -362,6 +362,15 @@
   background: rgba(251, 113, 133, 0.08);
 }
 
+.unlock-status {
+  display: grid;
+  gap: 10px;
+}
+
+.unlock-progress {
+  margin-top: 0;
+}
+
 .creators-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
