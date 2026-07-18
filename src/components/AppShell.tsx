@@ -7,6 +7,8 @@ type AppShellProps = {
   breadcrumb?: string
   backLabel?: string
   onBack?: () => void
+  onSwitchSite?: () => void
+  onLogout?: () => void
 }
 
 export function AppShell({
@@ -16,6 +18,8 @@ export function AppShell({
   breadcrumb,
   backLabel,
   onBack,
+  onSwitchSite,
+  onLogout,
 }: AppShellProps) {
   return (
     <div className="app">
@@ -48,13 +52,25 @@ export function AppShell({
             </nav>
           ) : null}
         </div>
-        {onBack && backLabel ? (
-          <button type="button" className="nav-pill" onClick={onBack}>
-            {backLabel}
-          </button>
-        ) : (
-          <span className="nav-tag">clone</span>
-        )}
+        <div className="app-nav-actions">
+          {onBack && backLabel ? (
+            <button type="button" className="nav-pill" onClick={onBack}>
+              {backLabel}
+            </button>
+          ) : null}
+          {onSwitchSite ? (
+            <button type="button" className="nav-pill" onClick={onSwitchSite}>
+              Switch site
+            </button>
+          ) : null}
+          {onLogout ? (
+            <button type="button" className="nav-pill" onClick={onLogout}>
+              Sign out
+            </button>
+          ) : (
+            <span className="nav-tag">clone</span>
+          )}
+        </div>
       </header>
       <main className="page">{children}</main>
     </div>

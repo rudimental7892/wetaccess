@@ -116,6 +116,14 @@
   text-transform: uppercase;
 }
 
+.app-nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .nav-pill {
   background: var(--bg-card);
   cursor: pointer;
@@ -1085,6 +1093,435 @@
   .media-grid,
   .creators-grid,
   .drops-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Login / site picker */
+.gate {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.gate-card {
+  width: min(420px, 100%);
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(17, 17, 22, 0.92);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 16px;
+}
+
+.gate-card.site-picker {
+  width: min(720px, 100%);
+}
+
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.gate-brand h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  letter-spacing: -0.03em;
+}
+
+.gate-brand p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.gate-mark,
+.app-brand-mark.ac,
+.site-card-mark {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.gate-mark,
+.site-card-mark.wa {
+  background: linear-gradient(135deg, var(--accent), #c4004a);
+}
+
+.site-card-mark.ac,
+.app-brand-mark.ac {
+  background: linear-gradient(135deg, #ea580c, #c2410c);
+}
+
+.gate-field {
+  display: grid;
+  gap: 6px;
+}
+
+.gate-field span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.gate-field input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+.gate-field input:focus {
+  outline: none;
+  border-color: rgba(255, 0, 85, 0.45);
+}
+
+.gate-submit {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), #c4004a);
+}
+
+.gate-submit:hover {
+  filter: brightness(1.06);
+}
+
+.gate-ghost {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.gate-ghost:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.gate-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.gate-hint {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.gate-hint code {
+  color: var(--text-muted);
+}
+
+.site-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.site-card {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  text-align: left;
+  padding: 18px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  color: inherit;
+}
+
+.site-card:hover {
+  border-color: rgba(255, 0, 85, 0.35);
+  background: var(--bg-card-hover);
+}
+
+.site-card-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.site-card-sub {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+/* African Casting catalog */
+.ac-page {
+  width: min(1280px, 100%);
+}
+
+.ac-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.ac-search {
+  flex: 1 1 220px;
+}
+
+.ac-search input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+.ac-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.ac-page-size select {
+  background: var(--bg-inset);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.ac-progress-wrap {
+  margin-bottom: 8px;
+}
+
+.ac-progress {
+  height: 6px;
+  background: var(--bg-inset);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ac-progress > span {
+  display: block;
+  height: 100%;
+  background: #ea580c;
+  transition: width 0.2s ease;
+}
+
+.ac-stats {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.ac-stats.error {
+  color: var(--danger);
+}
+
+.ac-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.ac-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-soft);
+  padding: 2rem;
+}
+
+.ac-card {
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ac-card:hover,
+.ac-card.active {
+  border-color: rgba(234, 88, 12, 0.55);
+}
+
+.ac-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--bg-inset);
+}
+
+.ac-card-body {
+  padding: 10px 12px 12px;
+}
+
+.ac-card-body h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.ac-card-body .meta {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-soft);
+}
+
+.ac-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.ac-pager button {
+  min-width: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ac-pager button.active {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #111;
+  font-weight: 700;
+}
+
+.ac-pager button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ac-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.ac-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.75);
+  cursor: pointer;
+}
+
+.ac-modal-panel {
+  position: relative;
+  z-index: 1;
+  width: min(960px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.ac-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ac-modal-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.ac-modal-close {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ac-modal-body {
+  padding: 16px;
+}
+
+.ac-modal-body video {
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  border-radius: 8px;
+}
+
+.ac-modal-status {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem 1rem;
+}
+
+.ac-modal-status.error {
+  color: var(--danger);
+}
+
+.ac-modal-meta {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  word-break: break-all;
+}
+
+.ac-modal-meta a {
+  color: #7dd3fc;
+}
+
+body.modal-open {
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .site-picker-grid {
     grid-template-columns: 1fr;
   }
 }

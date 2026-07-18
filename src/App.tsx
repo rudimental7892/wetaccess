@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import './App.css'
+import { AfricanCastingView } from './components/AfricanCastingView'
 import { AppShell } from './components/AppShell'
 import {
   DropDetailView,
@@ -15,8 +16,17 @@ import {
   navigateToDropsList,
 } from './components/DropsView'
 import { LoadingGrid } from './components/LoadingGrid'
+import { LoginView } from './components/LoginView'
 import { Pagination } from './components/Pagination'
+import { SitePicker } from './components/SitePicker'
 import { VideoDuration } from './components/VideoDuration'
+import {
+  type AppSite,
+  clearSession,
+  readSession,
+  type SessionState,
+  writeSession,
+} from './lib/session'
 import {
   type Creator,
   type MediaItem,
@@ -110,7 +120,63 @@ function profileBackTarget(): 'creators' | 'drops' {
 }
 
 function App() {
+  const [session, setSession] = useState<SessionState>(() => readSession())
+
+  function persist(next: SessionState) {
+    writeSession(next)
+    setSession(next)
+  }
+
+  function handleLogin() {
+    persist({ loggedIn: true, site: null })
+  }
+
+  function handlePickSite(site: AppSite) {
+    persist({ loggedIn: true, site })
+    window.location.hash = '#/'
+  }
+
+  function handleSwitchSite() {
+    persist({ loggedIn: true, site: null })
+    window.location.hash = '#/'
+  }
+
+  function handleLogout() {
+    clearSession()
+    setSession({ loggedIn: false, site: null })
+    window.location.hash = '#/'
+  }
+
+  if (!session.loggedIn) {
+    return <LoginView onSuccess={handleLogin} />
+  }
+
+  if (!session.site) {
+    return <SitePicker onPick={handlePickSite} onLogout={handleLogout} />
+  }
+
+  if (session.site === 'africancasting') {
+    return (
+      <AfricanCastingView
+        onSwitchSite={handleSwitchSite}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  return (
+    <WetaccessApp onSwitchSite={handleSwitchSite} onLogout={handleLogout} />
+  )
+}
+
+type WetaccessAppProps = {
+  onSwitchSite: () => void
+  onLogout: () => void
+}
+
+function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
   const [route, setRoute] = useState(parseRoute)
+  const shellExtra = { onSwitchSite, onLogout }
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseRoute())
@@ -129,6 +195,7 @@ function App() {
         backLabel={backTo === 'drops' ? 'All drops' : 'All creators'}
         onHome={onBack}
         onBack={onBack}
+        {...shellExtra}
       >
         <ProfileView username={route.username} />
       </AppShell>
@@ -143,6 +210,7 @@ function App() {
         backLabel="All drops"
         onHome={navigateToDropsList}
         onBack={navigateToDropsList}
+        {...shellExtra}
       >
         <DropDetailView dropId={route.dropId} />
       </AppShell>
@@ -151,14 +219,14 @@ function App() {
 
   if (route.view === 'drops') {
     return (
-      <AppShell activeNav="drops" onHome={navigateToCreators}>
+      <AppShell activeNav="drops" onHome={navigateToCreators} {...shellExtra}>
         <DropsListView />
       </AppShell>
     )
   }
 
   return (
-    <AppShell activeNav="creators" onHome={navigateToCreators}>
+    <AppShell activeNav="creators" onHome={navigateToCreators} {...shellExtra}>
       <CreatorsView />
     </AppShell>
   )

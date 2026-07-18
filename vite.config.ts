@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { defineConfig, type ProxyOptions } from 'vite'
 import react from '@vitejs/plugin-react'
+import { createAcProxyMiddleware } from './server/acProxy'
 import { createDropsMiddleware } from './server/dropsApi'
 import { createDurationMiddleware } from './server/wet3Duration'
 import { createHlsProxyMiddleware } from './server/hlsProxy'
@@ -50,12 +51,14 @@ function attachLocalApis() {
   return {
     name: 'wet3-local-apis',
     configureServer(server: { middlewares: { use: (fn: unknown) => void } }) {
+      server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())
       server.middlewares.use(createHlsProxyMiddleware())
     },
     configurePreviewServer(server: { middlewares: { use: (fn: unknown) => void } }) {
+      server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())
