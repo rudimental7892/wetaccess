@@ -209,44 +209,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  try {
-    const upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      redirect: 'manual',
-    })
+  // AAF stream broker on wet3 is flaky (plain "Proxy Error" / timeouts). Retry a few times.
+  const isStreamPath = path.includes('api/stream-v2/')
+  const maxAttempts = isStreamPath ? 4 : 1
+  let lastDetail = 'wet3 proxy failed'
 
-    res.status(upstream.status)
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const upstream = await fetch(targetUrl, {
+        method,
+        headers: {
+          ...headers,
+          // Fresh guest id per attempt — wet3 sometimes sticks a bad broker session.
+          Cookie: `wet3_user_id=${randomUUID()}`,
+        },
+        body,
+        redirect: 'manual',
+      })
 
-    const location = upstream.headers.get('location')
-    if (location) {
-      res.setHeader('location', rewriteLocation(location))
-    }
+      const location = upstream.headers.get('location')
+      const rawBody = Buffer.from(await upstream.arrayBuffer())
+      const upstreamContentType = upstream.headers.get('content-type')
+      const preview = rawBody.subarray(0, 64).toString('utf8').trim()
+      const proxyError = /^Proxy Error\b/i.test(preview)
 
-    upstream.headers.forEach((value, key) => {
-      const lower = key.toLowerCase()
-      if (HOP_BY_HOP.has(lower) || lower === 'set-cookie' || lower === 'location') {
+      if (proxyError) {
+        lastDetail = 'wet3 stream broker returned Proxy Error'
+        if (attempt < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+          continue
+        }
+
+        res.status(502)
+        res.setHeader('content-type', 'application/json')
+        res.setHeader('cache-control', 'private, no-store')
+        res.end(
+          JSON.stringify({
+            error: 'wet3 upstream proxy error',
+            detail: `${lastDetail} after ${maxAttempts} attempts`,
+            path,
+          }),
+        )
         return
       }
-      res.setHeader(key, value)
-    })
 
-    if (!upstream.headers.get('cache-control')) {
-      res.setHeader('cache-control', 'private, no-store')
+      res.status(upstream.status)
+
+      if (location) {
+        res.setHeader('location', rewriteLocation(location))
+      }
+
+      upstream.headers.forEach((value, key) => {
+        const lower = key.toLowerCase()
+        if (HOP_BY_HOP.has(lower) || lower === 'set-cookie' || lower === 'location') {
+          return
+        }
+        res.setHeader(key, value)
+      })
+
+      if (!upstream.headers.get('cache-control')) {
+        res.setHeader('cache-control', 'private, no-store')
+      }
+
+      res.end(rewritePlaylistBody(rawBody, upstreamContentType))
+      return
+    } catch (error) {
+      lastDetail = error instanceof Error ? error.message : String(error)
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+        continue
+      }
     }
-
-    const rawBody = Buffer.from(await upstream.arrayBuffer())
-    const upstreamContentType = upstream.headers.get('content-type')
-    res.end(rewritePlaylistBody(rawBody, upstreamContentType))
-  } catch (error) {
-    res.status(502)
-    res.setHeader('content-type', 'application/json')
-    res.end(
-      JSON.stringify({
-        error: 'wet3 proxy failed',
-        detail: error instanceof Error ? error.message : String(error),
-      }),
-    )
   }
+
+  res.status(502)
+  res.setHeader('content-type', 'application/json')
+  res.end(
+    JSON.stringify({
+      error: 'wet3 proxy failed',
+      detail: lastDetail,
+    }),
+  )
 }

@@ -27,6 +27,7 @@ import {
   type SessionState,
   writeSession,
 } from './lib/session'
+import { WatchView } from './components/WatchView'
 import {
   type Creator,
   type MediaItem,
@@ -36,8 +37,8 @@ import {
   imageUrl,
   mediaLabel,
   placeholderImage,
-  streamUrl,
   thumbnailUrl,
+  watchUrl,
   wet3AssetUrl,
 } from './lib/wet3'
 
@@ -48,6 +49,7 @@ type AppRoute =
   | { view: 'drops' }
   | { view: 'drop'; dropId: number }
   | { view: 'profile'; username: string }
+  | { view: 'watch'; mediaId: string }
 
 type CreatorsBrowseState = {
   search: string
@@ -91,6 +93,12 @@ function buildCreatorsHash({ search, page }: CreatorsBrowseState): string {
 }
 
 function parseRoute(): AppRoute {
+  const watchMatch = window.location.hash.match(/^#\/watch\/([^/?#]+)/)
+
+  if (watchMatch) {
+    return { view: 'watch', mediaId: decodeURIComponent(watchMatch[1]) }
+  }
+
   const profileMatch = window.location.hash.match(/^#\/user\/([^/?#]+)/)
 
   if (profileMatch) {
@@ -183,6 +191,21 @@ function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
+
+  if (route.view === 'watch') {
+    return (
+      <AppShell
+        activeNav="creators"
+        breadcrumb={`watch ${route.mediaId}`}
+        backLabel="Back"
+        onHome={() => window.history.back()}
+        onBack={() => window.history.back()}
+        {...shellExtra}
+      >
+        <WatchView mediaId={route.mediaId} />
+      </AppShell>
+    )
+  }
 
   if (route.view === 'profile') {
     const backTo = profileBackTarget()
@@ -542,10 +565,8 @@ function ProfileView({ username }: { username: string }) {
               <article key={item.id} className="media-item">
                 {item.media_type === '2' ? (
                   <a
-                    href={streamUrl(item.id)}
+                    href={watchUrl(item.id)}
                     className="media-card"
-                    target="_blank"
-                    rel="noreferrer"
                     aria-label={`Watch video ${mediaLabel(item)}`}
                   >
                     <img

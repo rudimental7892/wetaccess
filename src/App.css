@@ -1525,3 +1525,59 @@ body.modal-open {
     grid-template-columns: 1fr;
   }
 }
+
+.watch-view {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.watch-player-wrap {
+  position: relative;
+  width: 100%;
+  background:
+    radial-gradient(ellipse at 30% 0%, rgba(220, 38, 90, 0.18), transparent 55%),
+    linear-gradient(160deg, #141218, #0a0a0c 60%);
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.watch-player {
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 720px);
+  background: #000;
+  vertical-align: middle;
+}
+
+.watch-status,
+.watch-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.watch-meta code {
+  font-size: 0.85em;
+  color: var(--text-soft);
+}
+
+.watch-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.25);
+}
+
+.watch-error p {
+  margin: 0;
+  flex: 1 1 220px;
+  color: #fecaca;
+}

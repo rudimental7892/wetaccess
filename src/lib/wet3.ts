@@ -97,6 +97,11 @@ export function streamUrl(mediaId: string): string {
   return `${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`
 }
 
+/** In-app HLS watch page — avoids dumping wet3 "Proxy Error" text in a new tab. */
+export function watchUrl(mediaId: string): string {
+  return `#/watch/${encodeURIComponent(mediaId)}`
+}
+
 export function imageUrl(mediaId: string): string {
   return wet3AssetUrl(`/api/image/${mediaId}`)
 }
@@ -114,6 +119,11 @@ export function mediaLabel(item: MediaItem): string {
 export function thumbnailUrl(item: MediaItem): string {
   if (item.webp_thumb) {
     return wet3AssetUrl(item.webp_thumb)
+  }
+
+  // AAF CDN thumbs need signed cookies now — use wet3 /api/image instead.
+  if (item.path.includes('allaccessfans.co')) {
+    return imageUrl(item.id)
   }
 
   if (item.path.match(/\.(jpe?g|png|webp|gif)$/i)) {
@@ -554,12 +564,16 @@ export function dropItemCount(drop: Drop): number {
 export function dropItemThumbnailUrl(item: DropItem): string {
   const thumb = item.thumbnail ?? ''
   if (thumb && !thumb.includes('blog-placeholder')) {
+    // Absolute AAF CDN thumbs often 403 (CloudFront MissingKey) — prefer wet3 previews.
+    if (thumb.includes('allaccessfans.co')) {
+      return imageUrl(item.id)
+    }
     return wet3AssetUrl(thumb)
   }
 
   // YF pack stills + AAF stills: stream-v2 resolves to a JPEG (via proxy rewrite).
   if (item.id.startsWith('yf_') || (!item.duration?.trim() && /^\d+$/.test(item.id))) {
-    return streamUrl(item.id)
+    return imageUrl(item.id)
   }
 
   // Prefer wet3 preview path — /api/image/{id} 404s for many drop media IDs.
@@ -567,7 +581,15 @@ export function dropItemThumbnailUrl(item: DropItem): string {
 }
 
 export function dropItemOpenUrl(item: DropItem): string {
-  // stream-v2 serves AAF/Bunny HLS redirects and YF still JPEGs.
+  if (dropItemIsVideo(item)) {
+    return watchUrl(item.id)
+  }
+
+  // YF / AAF stills: stream-v2 or /api/image resolves to a JPEG.
+  if (item.id.startsWith('yf_') || /^\d+$/.test(item.id)) {
+    return imageUrl(item.id)
+  }
+
   return streamUrl(item.id)
 }
 
@@ -636,7 +658,8 @@ function writeSessionDrops(drops: Drop[]) {
 }
 
 async function fetchWet3DropsRaw(): Promise<Drop[]> {
-  const response = await fetch(`${API_BASE}/api/drops`)
+  // Use our slim /api/drops (HTML scrape) — wet3 /api/drops is multi‑MB and often times out.
+  const response = await fetch('/api/drops')
 
   if (!response.ok) {
     throw new Error(`Drops request failed (${response.status})`)
@@ -684,36 +707,9 @@ export type DropUnlockProgress = {
   requiredClicks: number
 }
 
-async function postDropClick(dropId: number): Promise<{
-  success?: boolean
-  click_count?: number
-  required_clicks?: number
-  unlocked?: boolean
-  duplicate?: boolean
-}> {
-  const response = await fetch(`${API_BASE}/api/drops/click`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ drop_id: dropId }),
-  })
-
-  const text = await response.text()
-  try {
-    return JSON.parse(text) as {
-      success?: boolean
-      click_count?: number
-      required_clicks?: number
-      unlocked?: boolean
-      duplicate?: boolean
-    }
-  } catch {
-    throw new Error(`Drop click failed (${response.status})`)
-  }
-}
-
 /**
- * Farm community clicks through wet3-proxy (fresh guest cookie per request),
- * then reload the catalog so pack items appear.
+ * Farm community clicks + resolve pack items via our /api/drop handler
+ * (scrapes wet3 /drops HTML — wet3's JSON catalog is too large/slow).
  */
 export async function unlockAndFetchDrop(
   dropId: number,
@@ -721,64 +717,44 @@ export async function unlockAndFetchDrop(
 ): Promise<Drop | null> {
   onProgress?.({ phase: 'loading', clickCount: 0, requiredClicks: 0 })
 
-  let catalog = await fetchWet3DropsRaw()
-  let drop = catalog.find((row) => row.id === dropId) ?? null
+  const catalog = await fetchDrops()
+  const listed = catalog.find((row) => row.id === dropId) ?? null
+  onProgress?.({
+    phase: listed && !listed.unlocked ? 'unlocking' : 'refreshing',
+    clickCount: listed?.click_count ?? 0,
+    requiredClicks: listed?.required_clicks ?? 0,
+  })
 
-  if (!drop) {
-    return null
+  const response = await fetch(`/api/drop?id=${encodeURIComponent(String(dropId))}`)
+  if (!response.ok) {
+    throw new Error(`Drop resolve failed (${response.status})`)
   }
 
-  if (drop.unlocked && Array.isArray(drop.items) && drop.items.length > 0) {
-    onProgress?.({
-      phase: 'done',
-      clickCount: drop.click_count,
-      requiredClicks: drop.required_clicks,
-    })
-    return drop
+  const data = (await response.json()) as {
+    drop?: Drop
+    unlockedNow?: boolean
   }
+  const drop = data.drop ?? null
 
-  let clickCount = drop.click_count
-  const required = drop.required_clicks
-  onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
-
-  // Sequential clicks — parallel batches race on wet3's counter and get rate-limited (502).
-  const maxAttempts = Math.min(120, Math.max(0, required - clickCount) + 8)
-  let failures = 0
-
-  for (let attempted = 0; attempted < maxAttempts && clickCount < required; attempted += 1) {
-    try {
-      const row = await postDropClick(dropId)
-      if (typeof row.click_count === 'number') {
-        clickCount = Math.max(clickCount, row.click_count)
-      } else if (!row.duplicate) {
-        clickCount += 1
-      }
-      failures = 0
-      onProgress?.({ phase: 'unlocking', clickCount, requiredClicks: required })
-      if (row.unlocked || clickCount >= required) {
-        break
-      }
-    } catch {
-      failures += 1
-      if (failures >= 5) {
-        throw new Error('Drop unlock failed — wet3 click API kept erroring. Try again.')
-      }
-      await new Promise((resolve) => setTimeout(resolve, 400 * failures))
-    }
+  if (drop) {
+    dropsCache = catalog.map((row) =>
+      row.id === drop.id
+        ? slimDropForList({
+            ...row,
+            unlocked: drop.unlocked,
+            click_count: drop.click_count,
+            required_clicks: drop.required_clicks,
+            items_count: drop.items_count ?? dropItemCount(drop),
+          })
+        : row,
+    )
+    writeSessionDrops(dropsCache)
   }
-
-  onProgress?.({ phase: 'refreshing', clickCount, requiredClicks: required })
-  catalog = await fetchWet3DropsRaw()
-  drop = catalog.find((row) => row.id === dropId) ?? drop
-
-  // Refresh slim list cache without retaining every unlocked pack's items in sessionStorage.
-  dropsCache = catalog.map(slimDropForList)
-  writeSessionDrops(dropsCache)
 
   onProgress?.({
     phase: 'done',
-    clickCount: drop?.click_count ?? clickCount,
-    requiredClicks: drop?.required_clicks ?? required,
+    clickCount: drop?.click_count ?? listed?.click_count ?? 0,
+    requiredClicks: drop?.required_clicks ?? listed?.required_clicks ?? 0,
   })
 
   return drop

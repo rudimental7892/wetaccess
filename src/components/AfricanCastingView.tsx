@@ -9,9 +9,16 @@ import {
 const PAGE_SIZES = [12, 24, 48, 96] as const
 const BATCH = 100
 
+type SortKey = 'latest' | 'oldest' | 'title'
+
 type AfricanCastingViewProps = {
   onSwitchSite: () => void
   onLogout: () => void
+}
+
+function videoIdNum(id: string): number {
+  const n = Number.parseInt(id, 10)
+  return Number.isFinite(n) ? n : 0
 }
 
 export function AfricanCastingView({
@@ -23,6 +30,7 @@ export function AfricanCastingView({
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(24)
+  const [sort, setSort] = useState<SortKey>('latest')
   const [loadingCatalog, setLoadingCatalog] = useState(false)
   const [catalogError, setCatalogError] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
@@ -39,12 +47,23 @@ export function AfricanCastingView({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return all
-    return all.filter((v) => {
-      const hay = `${v.title} ${v.models} ${v.channels} ${v.keywords}`.toLowerCase()
-      return hay.includes(q)
+    const rows = q
+      ? all.filter((v) => {
+          const hay = `${v.title} ${v.models} ${v.channels} ${v.keywords}`.toLowerCase()
+          return hay.includes(q)
+        })
+      : [...all]
+
+    rows.sort((a, b) => {
+      if (sort === 'title') {
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+      }
+      const diff = videoIdNum(b.id) - videoIdNum(a.id)
+      return sort === 'latest' ? diff : -diff
     })
-  }, [all, query])
+
+    return rows
+  }, [all, query, sort])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, pageCount)
@@ -172,6 +191,20 @@ export function AfricanCastingView({
                 setPage(1)
               }}
             />
+          </label>
+          <label className="ac-page-size">
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as SortKey)
+                setPage(1)
+              }}
+            >
+              <option value="latest">Latest</option>
+              <option value="oldest">Oldest</option>
+              <option value="title">Title</option>
+            </select>
           </label>
           <label className="ac-page-size">
             Per page
