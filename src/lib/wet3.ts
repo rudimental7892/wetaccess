@@ -97,7 +97,7 @@ export function streamUrl(mediaId: string): string {
   return `${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`
 }
 
-/** In-app HLS watch page — avoids dumping wet3 "Proxy Error" text in a new tab. */
+/** HLS watch page (open in a new tab) — avoids dumping wet3 "Proxy Error" text. */
 export function watchUrl(mediaId: string): string {
   return `#/watch/${encodeURIComponent(mediaId)}`
 }

@@ -555,16 +555,13 @@ export function DropDetailView({ dropId }: { dropId: number }) {
               const href = dropItemOpenUrl(item)
               const thumb = dropItemThumbnailUrl(item)
               const thumbFallback = wet3PreviewFallback(item)
-              const isWatchHash = href.startsWith('#/')
-
               return (
                 <article key={item.id} className="media-item">
                   <a
                     href={href}
                     className="media-card"
-                    {...(isWatchHash
-                      ? {}
-                      : { target: '_blank', rel: 'noreferrer' })}
+                    target="_blank"
+                    rel="noreferrer"
                     aria-label={`${isVideo ? 'Watch' : 'View'} drop item ${item.id}`}
                   >
                     <img

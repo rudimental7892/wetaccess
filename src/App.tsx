@@ -567,6 +567,8 @@ function ProfileView({ username }: { username: string }) {
                   <a
                     href={watchUrl(item.id)}
                     className="media-card"
+                    target="_blank"
+                    rel="noreferrer"
                     aria-label={`Watch video ${mediaLabel(item)}`}
                   >
                     <img
