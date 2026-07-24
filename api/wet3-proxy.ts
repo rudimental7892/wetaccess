@@ -236,9 +236,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (proxyError) {
         lastDetail = 'wet3 stream broker returned Proxy Error'
         if (attempt < maxAttempts - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+          await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
           continue
         }
+
+        const nested = incomingUrl.searchParams.get('url') ?? ''
+        const isAaf =
+          path.includes('stream-v2/proxy') && nested.includes('allaccessfans.co')
 
         res.status(502)
         res.setHeader('content-type', 'application/json')
@@ -246,8 +250,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.end(
           JSON.stringify({
             error: 'wet3 upstream proxy error',
-            detail: `${lastDetail} after ${maxAttempts} attempts`,
+            detail: isAaf
+              ? `${lastDetail} after ${maxAttempts} attempts — AAF CDN requires CloudFront cookies; wet3 broker cannot fetch playlists right now`
+              : `${lastDetail} after ${maxAttempts} attempts`,
             path,
+            source: isAaf ? 'allaccessfans' : 'wet3',
           }),
         )
         return
