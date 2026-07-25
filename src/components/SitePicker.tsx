@@ -53,6 +53,18 @@ export function SitePicker({ onPick, onLogout }: SitePickerProps) {
               Guest API POC — users, PII, KYC, paid HLS
             </span>
           </button>
+
+          <button
+            type="button"
+            className="site-card"
+            onClick={() => onPick('fantribe')}
+          >
+            <span className="site-card-mark ft">FT</span>
+            <span className="site-card-title">FanTribe</span>
+            <span className="site-card-sub">
+              Convex getAllPosts — locked CDN/Stream + KYC
+            </span>
+          </button>
         </div>
 
         <button type="button" className="gate-ghost" onClick={onLogout}>

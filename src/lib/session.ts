@@ -1,4 +1,4 @@
-export type AppSite = 'wetaccess' | 'africancasting' | 'fanbusy'
+export type AppSite = 'wetaccess' | 'africancasting' | 'fanbusy' | 'fantribe'
 
 export type SessionState = {
   loggedIn: boolean
@@ -25,7 +25,8 @@ export function readSession(): SessionState {
       site:
         parsed.site === 'wetaccess' ||
         parsed.site === 'africancasting' ||
-        parsed.site === 'fanbusy'
+        parsed.site === 'fanbusy' ||
+        parsed.site === 'fantribe'
           ? parsed.site
           : null,
     }

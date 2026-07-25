@@ -10,6 +10,7 @@ import {
 import './App.css'
 import { AfricanCastingView } from './components/AfricanCastingView'
 import { FanBusyView } from './components/FanBusyView'
+import { FanTribeView } from './components/FanTribeView'
 import { AppShell } from './components/AppShell'
 import {
   DropDetailView,
@@ -176,6 +177,15 @@ function App() {
   if (session.site === 'fanbusy') {
     return (
       <FanBusyView
+        onSwitchSite={handleSwitchSite}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (session.site === 'fantribe') {
+    return (
+      <FanTribeView
         onSwitchSite={handleSwitchSite}
         onLogout={handleLogout}
       />

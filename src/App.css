@@ -1164,6 +1164,12 @@
   background: linear-gradient(135deg, #ea580c, #c2410c);
 }
 
+.site-card-mark.ft,
+.app-brand-mark.ft {
+  background: linear-gradient(135deg, #0f766e, #134e4a);
+  color: #ecfdf5;
+}
+
 .site-card-mark.fb,
 .app-brand-mark.fb {
   background: linear-gradient(135deg, #0d9488, #0f766e);
