@@ -192,13 +192,24 @@ export async function fetchFbPosts(
 export async function fetchFbPostsByCreator(
   creatorId: string,
 ): Promise<FbPost[]> {
-  const body = await fbGet<FbPost[]>(
-    `posts/creator/optimised/${encodeURIComponent(creatorId)}`,
-  )
-  if (Array.isArray(body.data)) return body.data
-  // fallback
-  const alt = await fbGet<FbPost[]>(`posts/creator/${encodeURIComponent(creatorId)}`)
-  return Array.isArray(alt.data) ? alt.data : []
+  // Guest-accessible. `/posts/creator/optimised/{id}` requires auth (401).
+  const path = `posts/creator/${encodeURIComponent(creatorId)}`
+  const limit = 50
+  const all: FbPost[] = []
+  let skip = 1
+  let lastPage = 1
+
+  while (skip <= lastPage) {
+    const body = await fbGet<FbPost[]>(path, { skip, limit })
+    const rows = Array.isArray(body.data) ? body.data : []
+    all.push(...rows)
+    lastPage = Math.max(1, body.paginage?.last_page ?? skip)
+    if (!rows.length) break
+    skip += 1
+    if (skip > 100) break
+  }
+
+  return all
 }
 
 export async function fetchFbPost(postId: string): Promise<FbPost | null> {

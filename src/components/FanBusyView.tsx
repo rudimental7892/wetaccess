@@ -1083,6 +1083,7 @@ function UserDetailPage({
   const [loading, setLoading] = useState(true)
   const [postsLoading, setPostsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [postsError, setPostsError] = useState('')
   const [player, setPlayer] = useState<{
     url: string
     isVideo: boolean
@@ -1115,14 +1116,23 @@ function UserDetailPage({
         }
         setUser(base)
         setPostsLoading(true)
-        const rows = await fetchFbPostsByCreator(base._id).catch(() => [])
-        if (!cancelled) setPosts(rows)
+        setPostsError('')
+        try {
+          const rows = await fetchFbPostsByCreator(base._id)
+          if (!cancelled) setPosts(rows)
+        } catch (e) {
+          if (!cancelled) {
+            setPosts([])
+            setPostsError(e instanceof Error ? e.message : String(e))
+          }
+        } finally {
+          if (!cancelled) setPostsLoading(false)
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       } finally {
         if (!cancelled) {
           setLoading(false)
-          setPostsLoading(false)
         }
       }
     })()
@@ -1308,6 +1318,8 @@ function UserDetailPage({
             </div>
             {postsLoading ? (
               <p className="fb-muted">Loading posts…</p>
+            ) : postsError ? (
+              <p className="fb-stats error">{postsError}</p>
             ) : posts.length === 0 ? (
               <p className="fb-muted">No posts returned for this user.</p>
             ) : (
