@@ -4,6 +4,7 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  type SyntheticEvent,
 } from 'react'
 import {
   type FtAuthor,
@@ -13,9 +14,12 @@ import {
   fetchFtProfile,
   ftCreatorsFromPosts,
   ftFormatDate,
+  ftFormatDuration,
   ftHasKyc,
   ftIsLocked,
   ftStreamUrl,
+  ftThumbUrl,
+  ftWatchHash,
 } from '../lib/fantribe'
 
 type FanTribeViewProps = {
@@ -27,6 +31,7 @@ type FtRoute =
   | { view: 'posts'; filter: 'all' | 'locked' | 'public' | 'adult' }
   | { view: 'creators' }
   | { view: 'user'; username: string }
+  | { view: 'watch'; guid: string }
 
 const BROWSE_KEY = 'fantribe:browseHash'
 
@@ -35,6 +40,11 @@ function parseRoute(): FtRoute {
   const [pathPart, queryPart = ''] = hash.replace(/^#/, '').split('?')
   const pathname = pathPart || '/posts'
   const params = new URLSearchParams(queryPart)
+
+  const watchMatch = pathname.match(/^\/watch\/([^/]+)/)
+  if (watchMatch) {
+    return { view: 'watch', guid: decodeURIComponent(watchMatch[1]) }
+  }
 
   const userMatch = pathname.match(/^\/user\/([^/]+)/)
   if (userMatch) {
@@ -57,7 +67,7 @@ function parseRoute(): FtRoute {
 
 function rememberBrowse() {
   const h = window.location.hash
-  if (h.startsWith('#/user')) return
+  if (h.startsWith('#/user') || h.startsWith('#/watch')) return
   sessionStorage.setItem(BROWSE_KEY, h || '#/posts')
 }
 
@@ -85,68 +95,92 @@ function Field({
   )
 }
 
-function MediaModal({
-  open,
-  media,
-  onClose,
-}: {
-  open: boolean
-  media: FtMedia | null
-  onClose: () => void
-}) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    document.body.classList.add('modal-open')
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.classList.remove('modal-open')
-    }
-  }, [open, onClose])
+function VideoThumb({ media }: { media: FtMedia }) {
+  const [duration, setDuration] = useState<number | null>(
+    typeof media.duration === 'number' ? media.duration : null,
+  )
+  const [useVideoFrame, setUseVideoFrame] = useState(false)
+  const thumbSrc = ftThumbUrl(media.mediaId)
+  const streamSrc = ftStreamUrl(media.mediaId)
+  const label = ftFormatDuration(duration)
 
-  if (!open || !media) return null
+  const onThumbError = () => setUseVideoFrame(true)
 
-  const isVideo = media.type === 'video'
-  const src = isVideo ? ftStreamUrl(media.mediaId) : media.url
+  const onMeta = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      setDuration(video.duration)
+    }
+    // Nudge off frame 0 so the poster isn't a black keyframe.
+    if (video.currentTime < 0.05) {
+      video.currentTime = Math.min(0.75, Math.max(0.1, video.duration * 0.05 || 0.75))
+    }
+  }
 
   return (
-    <div className="fb-modal" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        className="fb-modal-backdrop"
-        aria-label="Close"
-        onClick={onClose}
-      />
-      <div className="fb-modal-panel">
-        <div className="fb-modal-header">
-          <h2>{isVideo ? 'Locked stream (Referer proxy)' : 'Image (unsigned CDN)'}</h2>
-          <button type="button" className="fb-modal-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="fb-modal-body">
-          {isVideo ? (
-            <video className="fb-player" src={src} controls autoPlay playsInline />
-          ) : (
-            <img src={src} alt="" />
-          )}
-        </div>
-        <p className="fb-modal-meta mono">{media.url}</p>
-      </div>
+    <a
+      className="fb-media-thumb video ft-media-thumb"
+      href={ftWatchHash(media.mediaId)}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Play video${label ? `, ${label}` : ''}`}
+    >
+      {!useVideoFrame ? (
+        <img src={thumbSrc} alt="" loading="lazy" onError={onThumbError} />
+      ) : (
+        <video
+          src={streamSrc}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={onMeta}
+        />
+      )}
+      {/* Hidden metadata probe when poster img works but API duration missing */}
+      {!useVideoFrame && duration == null ? (
+        <video
+          className="ft-meta-probe"
+          src={streamSrc}
+          muted
+          preload="metadata"
+          onLoadedMetadata={onMeta}
+          aria-hidden
+        />
+      ) : null}
+      <span className="fb-media-badge ft-play-badge" aria-hidden>
+        ▶
+      </span>
+      {label ? (
+        <span className="ft-media-duration">{label}</span>
+      ) : null}
+    </a>
+  )
+}
+
+function MediaGrid({ medias }: { medias: FtMedia[] }) {
+  return (
+    <div className="fb-media-grid">
+      {medias.map((m) =>
+        m.type === 'video' ? (
+          <VideoThumb key={m.mediaId} media={m} />
+        ) : (
+          <a
+            key={m.mediaId}
+            className="fb-media-thumb"
+            href={m.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open image"
+          >
+            <img src={m.url} alt="" loading="lazy" />
+          </a>
+        ),
+      )}
     </div>
   )
 }
 
-function PostCard({
-  post,
-  onPlay,
-}: {
-  post: FtPost
-  onPlay: (m: FtMedia) => void
-}) {
+function PostCard({ post }: { post: FtPost }) {
   const locked = ftIsLocked(post)
   const author = post.author
   const handle = author?.username || author?.name || 'unknown'
@@ -157,12 +191,16 @@ function PostCard({
         <a
           className="fb-link"
           href={`#/user/${encodeURIComponent(handle)}`}
+          target="_blank"
+          rel="noopener noreferrer"
           onClick={rememberBrowse}
         >
           <strong>@{handle}</strong>
         </a>
         <div className="fb-post-badges">
-          {locked ? <span className="fb-pill danger">subscribers_only</span> : (
+          {locked ? (
+            <span className="fb-pill danger">subscribers_only</span>
+          ) : (
             <span className="fb-pill ok">public</span>
           )}
           {post.isAdult ? <span className="fb-pill warn">+18</span> : null}
@@ -170,30 +208,7 @@ function PostCard({
         </div>
       </div>
       {post.content ? <p className="fb-post-body">{post.content}</p> : null}
-      <div className="fb-media-grid">
-        {(post.medias || []).map((m) =>
-          m.type === 'video' ? (
-            <button
-              key={m.mediaId}
-              type="button"
-              className="fb-media-thumb video"
-              onClick={() => onPlay(m)}
-            >
-              <span className="fb-media-badge">▶ Play MP4</span>
-              <span className="fb-media-url">{m.mediaId.slice(0, 8)}…</span>
-            </button>
-          ) : (
-            <button
-              key={m.mediaId}
-              type="button"
-              className="fb-media-thumb"
-              onClick={() => onPlay(m)}
-            >
-              <img src={m.url} alt="" loading="lazy" />
-            </button>
-          ),
-        )}
-      </div>
+      <MediaGrid medias={post.medias || []} />
       <div className="fb-post-foot">
         <span className="fb-muted mono">{post._id.slice(0, 16)}…</span>
         <span className="fb-muted">{(post.medias || []).length} media</span>
@@ -208,6 +223,8 @@ function CreatorCard({ user }: { user: FtAuthor }) {
     <a
       className="fb-user-card link"
       href={`#/user/${encodeURIComponent(handle)}`}
+      target="_blank"
+      rel="noopener noreferrer"
       onClick={rememberBrowse}
     >
       <div className="fb-user-avatar">
@@ -231,6 +248,86 @@ function CreatorCard({ user }: { user: FtAuthor }) {
   )
 }
 
+function WatchPage({
+  guid,
+  posts,
+}: {
+  guid: string
+  posts: FtPost[]
+}) {
+  const match = useMemo(() => {
+    for (const p of posts) {
+      for (const m of p.medias || []) {
+        if (m.type === 'video' && m.mediaId === guid) {
+          return { post: p, media: m }
+        }
+      }
+    }
+    return null
+  }, [posts, guid])
+
+  const [duration, setDuration] = useState<number | null>(
+    match?.media.duration ?? null,
+  )
+  const src = ftStreamUrl(guid)
+  const author = match?.post.author
+  const handle = author?.username || author?.name
+
+  return (
+    <div className="fb-detail-page ft-watch-page">
+      <div className="fb-detail-nav">
+        <a href={browseBackHash()} className="nav-pill">
+          ← Back
+        </a>
+        {handle ? (
+          <a
+            href={`#/user/${encodeURIComponent(handle)}`}
+            className="nav-pill"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            @{handle}
+          </a>
+        ) : null}
+      </div>
+
+      <section className="hero">
+        <p className="hero-eyebrow">Stream proxy</p>
+        <h1 className="fb-title">
+          {match?.post.visibility === 'subscribers_only'
+            ? 'Locked video'
+            : 'Video'}
+          {duration != null ? (
+            <span className="ft-watch-duration">
+              {' '}
+              · {ftFormatDuration(duration)}
+            </span>
+          ) : null}
+        </h1>
+        {match?.post.content ? (
+          <p className="fb-hero-line">{match.post.content}</p>
+        ) : null}
+      </section>
+
+      <div className="ft-watch-player-wrap">
+        <video
+          className="fb-player ft-watch-player"
+          src={src}
+          controls
+          autoPlay
+          playsInline
+          poster={ftThumbUrl(guid)}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget
+            if (Number.isFinite(v.duration)) setDuration(v.duration)
+          }}
+        />
+      </div>
+      <p className="fb-modal-meta mono">{guid}</p>
+    </div>
+  )
+}
+
 function UserDetail({
   username,
   posts,
@@ -241,7 +338,6 @@ function UserDetail({
   const [profile, setProfile] = useState<FtAuthor | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState<FtMedia | null>(null)
 
   const userPosts = useMemo(
     () =>
@@ -350,15 +446,13 @@ function UserDetail({
         </h3>
         <div className="fb-post-list">
           {userPosts.map((p) => (
-            <PostCard key={p._id} post={p} onPlay={setModal} />
+            <PostCard key={p._id} post={p} />
           ))}
           {userPosts.length === 0 ? (
             <p className="fb-empty">No posts for this creator in getAllPosts.</p>
           ) : null}
         </div>
       </section>
-
-      <MediaModal open={Boolean(modal)} media={modal} onClose={() => setModal(null)} />
     </div>
   )
 }
@@ -368,7 +462,6 @@ export function FanTribeView({ onSwitchSite, onLogout }: FanTribeViewProps) {
   const [posts, setPosts] = useState<FtPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [modal, setModal] = useState<FtMedia | null>(null)
 
   useEffect(() => {
     const onHash = () => setRoute(parseRoute())
@@ -467,7 +560,9 @@ export function FanTribeView({ onSwitchSite, onLogout }: FanTribeViewProps) {
 
       <main className="page fb-page">
         <div className="fb-main">
-          {route.view === 'user' ? (
+          {route.view === 'watch' ? (
+            <WatchPage guid={route.guid} posts={posts} />
+          ) : route.view === 'user' ? (
             <UserDetail username={route.username} posts={posts} />
           ) : (
             <>
@@ -533,7 +628,7 @@ export function FanTribeView({ onSwitchSite, onLogout }: FanTribeViewProps) {
 
                   <div className="fb-post-list">
                     {filteredPosts.map((p) => (
-                      <PostCard key={p._id} post={p} onPlay={setModal} />
+                      <PostCard key={p._id} post={p} />
                     ))}
                     {!loading && filteredPosts.length === 0 ? (
                       <p className="fb-empty">No posts in this filter.</p>
@@ -554,12 +649,6 @@ export function FanTribeView({ onSwitchSite, onLogout }: FanTribeViewProps) {
           )}
         </div>
       </main>
-
-      <MediaModal
-        open={Boolean(modal)}
-        media={modal}
-        onClose={() => setModal(null)}
-      />
     </div>
   )
 }

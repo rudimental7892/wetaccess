@@ -89,6 +89,15 @@ export function ftStreamUrl(guid: string, file = 'play_720p.mp4'): string {
   return `/api/ft-stream?${qs.toString()}`
 }
 
+/** Bunny Stream poster — proxied with mediadelivery Referer (same as MP4). */
+export function ftThumbUrl(guid: string): string {
+  return ftStreamUrl(guid, 'thumbnail.jpg')
+}
+
+export function ftWatchHash(guid: string): string {
+  return `#/watch/${encodeURIComponent(guid)}`
+}
+
 export function ftEmbedUrl(media: FtMedia): string | null {
   if (media.type !== 'video') return null
   if (media.url.includes('iframe.mediadelivery.net')) return media.url
@@ -109,6 +118,19 @@ export function ftFormatDate(ms: number | undefined): string {
   } catch {
     return '—'
   }
+}
+
+/** Duration in seconds (API field or media element). */
+export function ftFormatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return ''
+  const s = Math.round(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const r = s % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+  }
+  return `${m}:${String(r).padStart(2, '0')}`
 }
 
 export function ftCreatorsFromPosts(posts: FtPost[]): FtAuthor[] {
