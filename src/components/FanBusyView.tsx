@@ -413,11 +413,21 @@ function PostCard({
             {creator?.display_name || creator?.pseudo || 'Unknown'}
           </strong>
           {creator?.pseudo ? (
-            <a className="fb-link" href={userHref(creator)}>
+            <a
+              className="fb-link"
+              href={userHref(creator)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               @{creator.pseudo}
             </a>
           ) : creator?._id ? (
-            <a className="fb-link" href={userHref(creator)}>
+            <a
+              className="fb-link"
+              href={userHref(creator)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               Open profile
             </a>
           ) : null}
