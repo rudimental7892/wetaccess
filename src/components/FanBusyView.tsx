@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type SyntheticEvent,
 } from 'react'
 import Hls from 'hls.js'
 import {
@@ -14,9 +15,13 @@ import {
   type FbPost,
   type FbStats,
   fbAvatar,
+  fbFormatDuration,
   fbFormatMoney,
+  fbIsHlsUrl,
   fbIsVideo,
   fbMediaUrl,
+  fbPosterUrl,
+  fbProgressiveUrl,
   fetchFbCreatorByPseudo,
   fetchFbCreatorFull,
   fetchFbPosts,
@@ -256,15 +261,29 @@ function Field({
   )
 }
 
-function FbHlsPlayer({ src }: { src: string }) {
+function FbHlsPlayer({
+  src,
+  onDuration,
+}: {
+  src: string
+  onDuration?: (seconds: number) => void
+}) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const onDurationRef = useRef(onDuration)
+  onDurationRef.current = onDuration
 
   useEffect(() => {
     const video = videoRef.current
     if (!video || !src) return
 
     let hls: Hls | null = null
-    const isHls = src.includes('.m3u8') || src.includes('/hls/')
+    const isHls = fbIsHlsUrl(src)
+
+    const reportDuration = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        onDurationRef.current?.(video.duration)
+      }
+    }
 
     if (isHls && Hls.isSupported()) {
       hls = new Hls({
@@ -275,6 +294,7 @@ function FbHlsPlayer({ src }: { src: string }) {
       hls.loadSource(src)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        reportDuration()
         void video.play().catch(() => {})
       })
     } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -285,7 +305,10 @@ function FbHlsPlayer({ src }: { src: string }) {
       void video.play().catch(() => {})
     }
 
+    video.addEventListener('loadedmetadata', reportDuration)
+
     return () => {
+      video.removeEventListener('loadedmetadata', reportDuration)
       hls?.destroy()
       video.removeAttribute('src')
       video.load()
@@ -302,28 +325,179 @@ function FbHlsPlayer({ src }: { src: string }) {
   )
 }
 
-function MediaThumb({
+function applyVideoMeta(
+  video: HTMLVideoElement,
+  setDuration: (n: number | null) => void,
+) {
+  if (Number.isFinite(video.duration) && video.duration > 0) {
+    setDuration(video.duration)
+  }
+  // Nudge off frame 0 so the poster isn't a black keyframe.
+  if (video.currentTime < 0.05) {
+    video.currentTime = Math.min(
+      0.75,
+      Math.max(0.1, video.duration * 0.05 || 0.75),
+    )
+  }
+}
+
+function VideoThumb({
   ill,
+  post,
   onPlay,
 }: {
   ill: FbIllustration
+  post?: FbPost | null
+  onPlay: (url: string, isVideo: boolean) => void
+}) {
+  const streamUrl = fbMediaUrl(ill)
+  const progressive = fbProgressiveUrl(ill)
+  const poster = fbPosterUrl(ill, post)
+  const hlsPrimary = fbIsHlsUrl(streamUrl)
+  const previewSrc = progressive || (!hlsPrimary ? streamUrl : '')
+
+  const wrapRef = useRef<HTMLButtonElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [visible, setVisible] = useState(false)
+  const [duration, setDuration] = useState<number | null>(null)
+  const [posterFailed, setPosterFailed] = useState(false)
+  const label = fbFormatDuration(duration)
+  const showPoster = Boolean(poster) && !posterFailed
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true)
+          io.disconnect()
+        }
+      },
+      { rootMargin: '120px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible || showPoster) return
+    const video = videoRef.current
+    if (!video || !streamUrl) return
+
+    let hls: Hls | null = null
+    const src = previewSrc || streamUrl
+
+    if (fbIsHlsUrl(src) && Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        maxBufferLength: 4,
+        maxMaxBufferLength: 8,
+      })
+      hls.loadSource(src)
+      hls.attachMedia(video)
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        applyVideoMeta(video, setDuration)
+      })
+    } else if (fbIsHlsUrl(src) && video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src
+    } else if (src) {
+      video.src = src
+    }
+
+    return () => {
+      hls?.destroy()
+      video.removeAttribute('src')
+      video.load()
+    }
+  }, [visible, showPoster, streamUrl, previewSrc])
+
+  // Duration-only probe when a static poster is shown (no visible video element).
+  useEffect(() => {
+    if (!visible || !showPoster || duration != null || !streamUrl) return
+    const probe = document.createElement('video')
+    probe.muted = true
+    probe.preload = 'metadata'
+    probe.setAttribute('playsinline', '')
+    probe.className = 'ft-meta-probe'
+    let hls: Hls | null = null
+    const onMeta = () => applyVideoMeta(probe, setDuration)
+
+    const src = previewSrc || streamUrl
+    if (fbIsHlsUrl(src) && Hls.isSupported()) {
+      hls = new Hls({ enableWorker: true, maxBufferLength: 2 })
+      hls.loadSource(src)
+      hls.attachMedia(probe)
+      hls.on(Hls.Events.MANIFEST_PARSED, onMeta)
+    } else {
+      probe.src = src
+      probe.addEventListener('loadedmetadata', onMeta)
+    }
+    document.body.appendChild(probe)
+
+    return () => {
+      hls?.destroy()
+      probe.removeEventListener('loadedmetadata', onMeta)
+      probe.removeAttribute('src')
+      probe.load()
+      probe.remove()
+    }
+  }, [visible, showPoster, duration, streamUrl, previewSrc])
+
+  const onMeta = (event: SyntheticEvent<HTMLVideoElement>) => {
+    applyVideoMeta(event.currentTarget, setDuration)
+  }
+
+  if (!streamUrl) return null
+
+  return (
+    <button
+      ref={wrapRef}
+      type="button"
+      className="fb-media-thumb video ft-media-thumb"
+      onClick={() => onPlay(streamUrl, true)}
+      aria-label={`Play video${label ? `, ${label}` : ''}`}
+    >
+      {showPoster ? (
+        <img
+          src={poster}
+          alt=""
+          loading="lazy"
+          onError={() => setPosterFailed(true)}
+        />
+      ) : visible ? (
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={onMeta}
+        />
+      ) : (
+        <span className="fb-media-placeholder" aria-hidden />
+      )}
+      <span className="fb-media-badge ft-play-badge" aria-hidden>
+        ▶
+      </span>
+      {label ? <span className="ft-media-duration">{label}</span> : null}
+    </button>
+  )
+}
+
+function MediaThumb({
+  ill,
+  post,
+  onPlay,
+}: {
+  ill: FbIllustration
+  post?: FbPost | null
   onPlay: (url: string, isVideo: boolean) => void
 }) {
   const url = fbMediaUrl(ill)
   if (!url) return null
-  const video = fbIsVideo(ill)
 
-  if (video) {
-    return (
-      <button
-        type="button"
-        className="fb-media-thumb video"
-        onClick={() => onPlay(url, true)}
-      >
-        <span className="fb-media-badge">▶ Play stream</span>
-        <span className="fb-media-url">{url.slice(0, 64)}</span>
-      </button>
-    )
+  if (fbIsVideo(ill)) {
+    return <VideoThumb ill={ill} post={post} onPlay={onPlay} />
   }
 
   return (
@@ -348,8 +522,11 @@ function MediaModal({
   isVideo: boolean
   onClose: () => void
 }) {
+  const [duration, setDuration] = useState<number | null>(null)
+
   useEffect(() => {
     if (!open) return
+    setDuration(null)
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -359,9 +536,11 @@ function MediaModal({
       document.removeEventListener('keydown', onKey)
       document.body.classList.remove('modal-open')
     }
-  }, [open, onClose])
+  }, [open, onClose, url])
 
   if (!open) return null
+
+  const length = fbFormatDuration(duration)
 
   return (
     <div className="fb-modal" role="dialog" aria-modal="true">
@@ -373,13 +552,25 @@ function MediaModal({
       />
       <div className="fb-modal-panel">
         <div className="fb-modal-header">
-          <h2>{isVideo ? 'Media playback' : 'Image'}</h2>
+          <h2>
+            {isVideo ? 'Media playback' : 'Image'}
+            {length ? (
+              <span className="ft-watch-duration"> · {length}</span>
+            ) : null}
+          </h2>
           <button type="button" className="fb-modal-close" onClick={onClose}>
             ×
           </button>
         </div>
         <div className="fb-modal-body">
-          {isVideo ? <FbHlsPlayer src={url} /> : <img src={url} alt="" />}
+          {isVideo ? (
+            <FbHlsPlayer
+              src={url}
+              onDuration={(n) => setDuration(n)}
+            />
+          ) : (
+            <img src={url} alt="" />
+          )}
           <p className="fb-modal-meta mono">
             <a href={url} target="_blank" rel="noreferrer">
               {url}
@@ -452,7 +643,7 @@ function PostCard({
       {ills.length ? (
         <div className="fb-media-grid">
           {ills.map((ill) => (
-            <MediaThumb key={ill._id} ill={ill} onPlay={onPlay} />
+            <MediaThumb key={ill._id} ill={ill} post={post} onPlay={onPlay} />
           ))}
         </div>
       ) : null}

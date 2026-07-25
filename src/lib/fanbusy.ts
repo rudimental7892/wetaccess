@@ -233,6 +233,24 @@ export function fbMediaUrl(ill: FbIllustration | null | undefined): string {
   return ill.extra_links?.hls || ill.link_compressed || ill.link || ''
 }
 
+/** Prefer progressive file for <video> poster/metadata when HLS is primary. */
+export function fbProgressiveUrl(
+  ill: FbIllustration | null | undefined,
+): string {
+  if (!ill) return ''
+  const link = ill.link || ''
+  const compressed = ill.link_compressed || ''
+  for (const u of [compressed, link]) {
+    if (u && !u.includes('.m3u8') && !u.includes('/hls/')) return u
+  }
+  return ''
+}
+
+export function fbIsHlsUrl(url: string): boolean {
+  const u = url.toLowerCase()
+  return u.includes('.m3u8') || u.includes('/hls/')
+}
+
 export function fbIsVideo(ill: FbIllustration | null | undefined): boolean {
   if (!ill) return false
   const url = fbMediaUrl(ill).toLowerCase()
@@ -243,6 +261,45 @@ export function fbIsVideo(ill: FbIllustration | null | undefined): boolean {
     url.includes('/hls/') ||
     /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url)
   )
+}
+
+/** Poster still: post cover, thumbnail illustration, or sibling image. */
+export function fbPosterUrl(
+  ill: FbIllustration,
+  post?: FbPost | null,
+): string {
+  if (post?.cover_image) return post.cover_image
+  if (ill.cover_image && ill.link && !fbIsVideo(ill)) return ill.link
+  for (const sib of post?.illustrations ?? []) {
+    if (sib._id === ill._id) continue
+    if (sib.is_thumbnail || sib.cover_image) {
+      const u = sib.link_compressed || sib.link
+      if (u && !fbIsVideo(sib)) return u
+    }
+  }
+  for (const sib of post?.illustrations ?? []) {
+    if (sib._id === ill._id) continue
+    const mime = (sib.mime_type || '').toLowerCase()
+    const u = sib.link_compressed || sib.link || ''
+    if (mime.includes('image') || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(u)) {
+      return u
+    }
+  }
+  return ''
+}
+
+export function fbFormatDuration(
+  seconds: number | null | undefined,
+): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return ''
+  const s = Math.round(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const r = s % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+  }
+  return `${m}:${String(r).padStart(2, '0')}`
 }
 
 export function fbFormatMoney(
