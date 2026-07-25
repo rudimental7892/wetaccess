@@ -41,6 +41,18 @@ export function SitePicker({ onPick, onLogout }: SitePickerProps) {
               Full public catalog + embed MP4 playback
             </span>
           </button>
+
+          <button
+            type="button"
+            className="site-card"
+            onClick={() => onPick('fanbusy')}
+          >
+            <span className="site-card-mark fb">FB</span>
+            <span className="site-card-title">FanBusy</span>
+            <span className="site-card-sub">
+              Guest API POC — users, PII, KYC, paid HLS
+            </span>
+          </button>
         </div>
 
         <button type="button" className="gate-ghost" onClick={onLogout}>

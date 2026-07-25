@@ -9,6 +9,7 @@ import {
 } from 'react'
 import './App.css'
 import { AfricanCastingView } from './components/AfricanCastingView'
+import { FanBusyView } from './components/FanBusyView'
 import { AppShell } from './components/AppShell'
 import {
   DropDetailView,
@@ -166,6 +167,15 @@ function App() {
   if (session.site === 'africancasting') {
     return (
       <AfricanCastingView
+        onSwitchSite={handleSwitchSite}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (session.site === 'fanbusy') {
+    return (
+      <FanBusyView
         onSwitchSite={handleSwitchSite}
         onLogout={handleLogout}
       />
