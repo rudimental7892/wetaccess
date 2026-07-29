@@ -773,6 +773,19 @@ export async function fetchDrop(
 }
 
 export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
+  // Full catalog lives on paginated /api/profile (≈9/page). SSR mediaJson is
+  // often "[]" or a short embed — use it only as a supplement/fallback.
+  let fromApi: MediaItem[] = []
+  try {
+    fromApi = await fetchUserMediaFromProfileApi(username)
+  } catch {
+    fromApi = []
+  }
+
+  if (fromApi.length > 0) {
+    return fromApi
+  }
+
   const response = await fetch(`${API_BASE}/user/${encodeURIComponent(username)}`)
 
   if (!response.ok) {
@@ -781,71 +794,97 @@ export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
 
   const html = await response.text()
 
-  // Real profile pages may still load the Turnstile script URL — only the
-  // challenge shell lacks mediaJson / uses the Security Check title.
   const isChallengeShell =
     html.includes('Security Check - Wet3') ||
     (html.includes('Security Check') && !html.includes('mediaJson'))
 
-  if (isChallengeShell) {
+  if (!isChallengeShell && html.includes('mediaJson')) {
     try {
-      const fallback = await fetchUserMediaFromProfileApi(username)
-      if (fallback.length > 0) {
-        return fallback
+      const fromHtml = parseMediaJson(html)
+      if (fromHtml.length > 0) {
+        return fromHtml
       }
     } catch {
-      // ignore — surface the Turnstile cause below
+      // fall through
     }
+  }
 
+  if (isChallengeShell) {
     throw new Error(
       'wet3 Turnstile blocked /user/{username} (no mediaJson). Restart the Vite proxy so it injects wet3_user_id.',
     )
   }
 
-  if (!html.includes('mediaJson')) {
-    const fallback = await fetchUserMediaFromProfileApi(username)
-    if (fallback.length > 0) {
-      return fallback
-    }
-    throw new Error('No mediaJson in profile HTML and /api/profile returned 0 items')
-  }
-
-  return parseMediaJson(html)
+  throw new Error('No mediaJson in profile HTML and /api/profile returned 0 items')
 }
 
+type ProfileApiMediaRow = {
+  id: string
+  path?: string | null
+  isVideo?: number | boolean
+  username?: string
+  webp_thumb?: string | null
+  src?: string
+}
+
+function mapProfileApiRows(
+  rows: ProfileApiMediaRow[],
+  username: string,
+): MediaItem[] {
+  return rows.map((row) => {
+    const isVideo = row.isVideo === 1 || row.isVideo === true
+    return enrichMediaItem({
+      id: String(row.id),
+      media_type: isVideo ? '2' : '1',
+      src: row.src ?? 'aa',
+      path: row.path ?? '',
+      username: row.username ?? username,
+      webp_thumb: row.webp_thumb ?? null,
+    })
+  })
+}
+
+/**
+ * `/api/profile/{user}` returns ~9 items per page. Walk pages until empty
+ * (pridevips: 98 across 11 pages; page 12 = []).
+ */
 async function fetchUserMediaFromProfileApi(username: string): Promise<MediaItem[]> {
-  const response = await fetch(
-    `${API_BASE}/api/profile/${encodeURIComponent(username.toLowerCase())}`,
-  )
+  const slug = username.toLowerCase()
+  const byId = new Map<string, MediaItem>()
+  const maxPages = 100
 
-  if (!response.ok) {
-    throw new Error(`Profile API failed (${response.status})`)
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = await fetch(
+      `${API_BASE}/api/profile/${encodeURIComponent(slug)}?page=${page}`,
+    )
+
+    if (!response.ok) {
+      if (page === 1) {
+        throw new Error(`Profile API failed (${response.status})`)
+      }
+      break
+    }
+
+    const data = (await response.json()) as { media?: ProfileApiMediaRow[] }
+    const rows = data.media ?? []
+
+    if (rows.length === 0) {
+      break
+    }
+
+    let added = 0
+    for (const item of mapProfileApiRows(rows, username)) {
+      if (!byId.has(item.id)) {
+        byId.set(item.id, item)
+        added += 1
+      }
+    }
+
+    // Same page repeating / wrap — stop.
+    if (added === 0) {
+      break
+    }
   }
 
-  const data = (await response.json()) as {
-    media?: Array<{
-      id: string
-      path?: string | null
-      isVideo?: number | boolean
-      username?: string
-      webp_thumb?: string | null
-      src?: string
-    }>
-  }
-
-  const rows = data.media ?? []
-
-  return sortMediaNewestFirst(
-    rows.map((row) => {
-      const isVideo = row.isVideo === 1 || row.isVideo === true
-      return enrichMediaItem({
-        id: String(row.id),
-        media_type: isVideo ? '2' : '1',
-        src: row.src ?? 'aa',
-        path: row.path ?? '',
-        username: row.username ?? username,
-        webp_thumb: row.webp_thumb ?? null,
-      })
-    }),
-  )
+  return sortMediaNewestFirst([...byId.values()])
 }
