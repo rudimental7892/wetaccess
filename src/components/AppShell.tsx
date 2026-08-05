@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 type AppShellProps = {
   children: ReactNode
   onHome?: () => void
-  activeNav?: 'creators' | 'drops'
+  activeNav?: 'creators' | 'twitter' | 'drops'
   breadcrumb?: string
   backLabel?: string
   onBack?: () => void
@@ -36,6 +36,13 @@ export function AppShell({
               aria-current={activeNav === 'creators' ? 'page' : undefined}
             >
               Creators
+            </a>
+            <a
+              href="#/twitter"
+              className={`nav-tab${activeNav === 'twitter' ? ' active' : ''}`}
+              aria-current={activeNav === 'twitter' ? 'page' : undefined}
+            >
+              Twitter
             </a>
             <a
               href="#/drops"

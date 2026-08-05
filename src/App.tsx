@@ -48,9 +48,10 @@ type Tab = 'all' | 'images' | 'videos'
 
 type AppRoute =
   | { view: 'creators' }
+  | { view: 'twitter' }
   | { view: 'drops' }
   | { view: 'drop'; dropId: number }
-  | { view: 'profile'; username: string }
+  | { view: 'profile'; username: string; from?: 'creators' | 'twitter' | 'drops' }
   | { view: 'watch'; mediaId: string }
 
 type CreatorsBrowseState = {
@@ -58,16 +59,19 @@ type CreatorsBrowseState = {
   page: number
 }
 
+type ProfileBack = 'creators' | 'twitter' | 'drops'
+
 const MEDIA_PER_PAGE = 20
 const CREATORS_PER_PAGE = 24
 const BROWSE_HASH_KEY = 'wetaccess:browseHash'
+const TWITTER_BROWSE_HASH_KEY = 'wetaccess:twitterBrowseHash'
 const PROFILE_BACK_KEY = 'wetaccess:profileBack'
 
 function mediaTypeLabel(type: MediaItem['media_type']): string {
   return type === '2' ? 'Video' : 'Image'
 }
 
-function parseCreatorsBrowseState(): CreatorsBrowseState {
+function parseBrowseQueryFromHash(): CreatorsBrowseState {
   const hash = window.location.hash
   const queryStart = hash.indexOf('?')
   const params = new URLSearchParams(
@@ -79,7 +83,10 @@ function parseCreatorsBrowseState(): CreatorsBrowseState {
   return { search, page }
 }
 
-function buildCreatorsHash({ search, page }: CreatorsBrowseState): string {
+function buildBrowseHash(
+  basePath: '#/' | '#/twitter',
+  { search, page }: CreatorsBrowseState,
+): string {
   const params = new URLSearchParams()
 
   if (search) {
@@ -91,7 +98,10 @@ function buildCreatorsHash({ search, page }: CreatorsBrowseState): string {
   }
 
   const query = params.toString()
-  return query ? `#/?${query}` : '#/'
+  if (!query) {
+    return basePath === '#/' ? '#/' : '#/twitter'
+  }
+  return basePath === '#/' ? `#/?${query}` : `#/twitter?${query}`
 }
 
 function parseRoute(): AppRoute {
@@ -104,7 +114,21 @@ function parseRoute(): AppRoute {
   const profileMatch = window.location.hash.match(/^#\/user\/([^/?#]+)/)
 
   if (profileMatch) {
-    return { view: 'profile', username: decodeURIComponent(profileMatch[1]) }
+    const hash = window.location.hash
+    const queryStart = hash.indexOf('?')
+    const params = new URLSearchParams(
+      queryStart >= 0 ? hash.slice(queryStart + 1) : '',
+    )
+    const fromRaw = params.get('from') ?? sessionStorage.getItem(PROFILE_BACK_KEY)
+    const from: ProfileBack | undefined =
+      fromRaw === 'twitter' || fromRaw === 'drops' || fromRaw === 'creators'
+        ? fromRaw
+        : undefined
+    return {
+      view: 'profile',
+      username: decodeURIComponent(profileMatch[1]),
+      from,
+    }
   }
 
   const dropMatch = window.location.hash.match(/^#\/drops\/(\d+)/)
@@ -117,6 +141,10 @@ function parseRoute(): AppRoute {
     return { view: 'drops' }
   }
 
+  if (window.location.hash.startsWith('#/twitter')) {
+    return { view: 'twitter' }
+  }
+
   return { view: 'creators' }
 }
 
@@ -125,8 +153,20 @@ function navigateToCreators() {
   window.location.hash = savedBrowseHash || '#/'
 }
 
-function profileBackTarget(): 'creators' | 'drops' {
-  return sessionStorage.getItem(PROFILE_BACK_KEY) === 'drops' ? 'drops' : 'creators'
+function navigateToTwitter() {
+  const saved = sessionStorage.getItem(TWITTER_BROWSE_HASH_KEY)
+  window.location.hash = saved || '#/twitter'
+}
+
+function profileBackTarget(from?: ProfileBack): ProfileBack {
+  if (from === 'twitter' || from === 'drops' || from === 'creators') {
+    return from
+  }
+  const stored = sessionStorage.getItem(PROFILE_BACK_KEY)
+  if (stored === 'twitter' || stored === 'drops') {
+    return stored
+  }
+  return 'creators'
 }
 
 function App() {
@@ -228,14 +268,25 @@ function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
   }
 
   if (route.view === 'profile') {
-    const backTo = profileBackTarget()
-    const onBack = backTo === 'drops' ? navigateToDropsList : navigateToCreators
+    const backTo = profileBackTarget(route.from)
+    const onBack =
+      backTo === 'drops'
+        ? navigateToDropsList
+        : backTo === 'twitter'
+          ? navigateToTwitter
+          : navigateToCreators
 
     return (
       <AppShell
         activeNav={backTo}
         breadcrumb={`@${route.username}`}
-        backLabel={backTo === 'drops' ? 'All drops' : 'All creators'}
+        backLabel={
+          backTo === 'drops'
+            ? 'All drops'
+            : backTo === 'twitter'
+              ? 'Twitter creators'
+              : 'All creators'
+        }
         onHome={onBack}
         onBack={onBack}
         {...shellExtra}
@@ -268,6 +319,14 @@ function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
     )
   }
 
+  if (route.view === 'twitter') {
+    return (
+      <AppShell activeNav="twitter" onHome={navigateToTwitter} {...shellExtra}>
+        <CreatorsView twitterOnly />
+      </AppShell>
+    )
+  }
+
   return (
     <AppShell activeNav="creators" onHome={navigateToCreators} {...shellExtra}>
       <CreatorsView />
@@ -275,8 +334,8 @@ function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
   )
 }
 
-function CreatorsView() {
-  const initialBrowse = parseCreatorsBrowseState()
+function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
+  const initialBrowse = parseBrowseQueryFromHash()
   const [searchInput, setSearchInput] = useState(initialBrowse.search)
   const [searchQuery, setSearchQuery] = useState(initialBrowse.search)
   const [page, setPage] = useState(initialBrowse.page)
@@ -285,9 +344,17 @@ function CreatorsView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const browseStorageKey = twitterOnly ? TWITTER_BROWSE_HASH_KEY : BROWSE_HASH_KEY
+  const hashBase: '#/' | '#/twitter' = twitterOnly ? '#/twitter' : '#/'
+  const profileFrom = twitterOnly ? 'twitter' : 'creators'
+
+  useEffect(() => {
+    sessionStorage.setItem(PROFILE_BACK_KEY, profileFrom)
+  }, [profileFrom])
+
   useEffect(() => {
     const syncBrowseFromHash = () => {
-      const { search, page: nextPage } = parseCreatorsBrowseState()
+      const { search, page: nextPage } = parseBrowseQueryFromHash()
       setSearchInput(search)
       setSearchQuery(search)
       setPage(nextPage)
@@ -297,11 +364,14 @@ function CreatorsView() {
     return () => window.removeEventListener('hashchange', syncBrowseFromHash)
   }, [])
 
-  const updateBrowseHash = useCallback((next: CreatorsBrowseState) => {
-    const nextHash = buildCreatorsHash(next)
-    sessionStorage.setItem(BROWSE_HASH_KEY, nextHash)
-    window.location.hash = nextHash
-  }, [])
+  const updateBrowseHash = useCallback(
+    (next: CreatorsBrowseState) => {
+      const nextHash = buildBrowseHash(hashBase, next)
+      sessionStorage.setItem(browseStorageKey, nextHash)
+      window.location.hash = nextHash
+    },
+    [browseStorageKey, hashBase],
+  )
 
   const totalPages = Math.max(1, Math.ceil(total / CREATORS_PER_PAGE))
 
@@ -310,17 +380,25 @@ function CreatorsView() {
     setError(null)
 
     try {
-      const data = await fetchCreators(page, CREATORS_PER_PAGE, searchQuery)
+      const data = await fetchCreators(page, CREATORS_PER_PAGE, searchQuery, {
+        twitterOnly,
+      })
       setCreators(data.items)
       setTotal(data.total)
     } catch (loadError) {
       setCreators([])
       setTotal(0)
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load creators')
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : twitterOnly
+            ? 'Failed to load Twitter creators'
+            : 'Failed to load creators',
+      )
     } finally {
       setLoading(false)
     }
-  }, [page, searchQuery])
+  }, [page, searchQuery, twitterOnly])
 
   useEffect(() => {
     void loadCreators()
@@ -345,11 +423,17 @@ function CreatorsView() {
   return (
     <>
       <section className="hero">
-        <p className="hero-eyebrow">Discover</p>
-        <h1 className="hero-title">Find your next favorite creator</h1>
+        <p className="hero-eyebrow">{twitterOnly ? 'Twitter' : 'Discover'}</p>
+        <h1 className="hero-title">
+          {twitterOnly
+            ? 'Creators with Twitter profiles'
+            : 'Find your next favorite creator'}
+        </h1>
         <p className="hero-copy">
-          {total.toLocaleString()} profiles to browse. Search by username or display name,
-          then dive into their full media library.
+          {total.toLocaleString()}{' '}
+          {twitterOnly
+            ? 'Twitter-linked profiles. Same media library as Creators — open a card to browse their posts.'
+            : 'profiles to browse. Search by username or display name, then dive into their full media library.'}
         </p>
       </section>
 
@@ -360,8 +444,8 @@ function CreatorsView() {
             type="search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search creators…"
-            aria-label="Search creators"
+            placeholder={twitterOnly ? 'Search Twitter creators…' : 'Search creators…'}
+            aria-label={twitterOnly ? 'Search Twitter creators' : 'Search creators'}
           />
           <button type="submit" className="btn btn-primary">
             Search
@@ -387,7 +471,7 @@ function CreatorsView() {
             <a
               key={creator.u}
               className="creator-card"
-              href={`#/user/${encodeURIComponent(creator.u)}`}
+              href={`#/user/${encodeURIComponent(creator.u)}?from=${profileFrom}`}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -408,7 +492,11 @@ function CreatorsView() {
       ) : null}
 
       {!loading && !error && creators.length === 0 ? (
-        <p className="empty">No creators matched that search.</p>
+        <p className="empty">
+          {twitterOnly
+            ? 'No Twitter creators matched that search.'
+            : 'No creators matched that search.'}
+        </p>
       ) : null}
 
       {!loading && !error && creators.length > 0 ? (

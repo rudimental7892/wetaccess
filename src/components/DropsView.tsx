@@ -477,7 +477,7 @@ export function DropDetailView({ dropId }: { dropId: number }) {
               <>
                 <a
                   className="link-btn"
-                  href={`#/user/${encodeURIComponent(drop.username)}`}
+                  href={`#/user/${encodeURIComponent(drop.username)}?from=drops`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

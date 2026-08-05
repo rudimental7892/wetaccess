@@ -518,10 +518,16 @@ export function parseMediaJson(html: string): MediaItem[] {
   return sortMediaNewestFirst(data.map((item) => enrichMediaItem(item)))
 }
 
+export type FetchCreatorsOptions = {
+  /** Wet3 Twitter tab — creators with linked Twitter profiles. */
+  twitterOnly?: boolean
+}
+
 export async function fetchCreators(
   page: number,
   limit: number,
   search?: string,
+  options: FetchCreatorsOptions = {},
 ): Promise<CreatorsResponse> {
   const params = new URLSearchParams({
     page: String(page),
@@ -532,10 +538,18 @@ export async function fetchCreators(
     params.set('search', search.trim())
   }
 
+  if (options.twitterOnly) {
+    params.set('twitterOnly', 'true')
+  }
+
   const response = await fetch(`${API_BASE}/api/creators?${params}`)
 
   if (!response.ok) {
-    throw new Error(`Creators request failed (${response.status})`)
+    throw new Error(
+      options.twitterOnly
+        ? `Twitter creators request failed (${response.status})`
+        : `Creators request failed (${response.status})`,
+    )
   }
 
   return response.json() as Promise<CreatorsResponse>
