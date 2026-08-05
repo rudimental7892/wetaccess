@@ -169,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const incomingUrl = new URL(req.url ?? '/', 'http://localhost')
   incomingUrl.searchParams.delete('path')
 
-  // AAF stills: wet3's proxy.m3u8 points at a missing *.jpg.m3u8 — unwrap to the real /image/ asset.
+  // AAF stills / Bunny nested in proxy-m3u8 — never let the browser fetch CDN raw.
   if (path.includes('api/stream-v2/proxy')) {
     const nested = incomingUrl.searchParams.get('url')
     const still = nested ? aafStillUrlFromFakeHls(nested) : null
@@ -179,6 +179,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('cache-control', 'private, no-store')
       res.end()
       return
+    }
+    if (nested) {
+      try {
+        const nestedHost = new URL(nested).hostname
+        if (nestedHost.endsWith('.b-cdn.net') || nestedHost.endsWith('allaccessfans.co')) {
+          res.status(302)
+          res.setHeader('location', hlsProxyPath(nested))
+          res.setHeader('cache-control', 'private, no-store')
+          res.end()
+          return
+        }
+      } catch {
+        // fall through to wet3
+      }
     }
   }
 
@@ -257,6 +271,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             source: isAaf ? 'allaccessfans' : 'wet3',
           }),
         )
+        return
+      }
+
+      // stream-v2 → Bunny: serve playlist via hls-proxy so the browser never
+      // hits b-cdn.net (Referer gate → 403). Prefer inline 200 over a bare 302.
+      if (location && isStreamPath) {
+        const rewritten = rewriteLocation(location)
+        if (rewritten.startsWith('/api/hls-proxy')) {
+          const nested = new URL(rewritten, 'http://localhost').searchParams.get('url')
+          if (nested) {
+            try {
+              const cdn = await fetch(nested, {
+                redirect: 'follow',
+                headers: {
+                  'User-Agent': headers['User-Agent'],
+                  Accept: '*/*',
+                  Referer: `${WET3_ORIGIN}/`,
+                  Origin: WET3_ORIGIN,
+                },
+              })
+              const cdnBuf = Buffer.from(await cdn.arrayBuffer())
+              const cdnCt = cdn.headers.get('content-type')
+              const finalUrl = cdn.url || nested
+              const head = cdnBuf.subarray(0, 7).toString('utf8')
+              const isPlaylist =
+                (cdnCt ?? '').includes('mpegurl') ||
+                (cdnCt ?? '').includes('m3u8') ||
+                head.startsWith('#EXTM3U')
+
+              res.status(cdn.status)
+              res.setHeader('cache-control', 'private, no-store')
+              res.setHeader('access-control-allow-origin', '*')
+              res.setHeader('x-wetaccess-play-url', rewritten)
+
+              if (isPlaylist) {
+                // Rewrite child URLs onto same-origin hls-proxy (mirrors api/hls-proxy.ts).
+                const text = cdnBuf.toString('utf8')
+                const rewrittenPlaylist = text
+                  .split('\n')
+                  .map((line) => {
+                    const trimmed = line.trim()
+                    if (!trimmed) return line
+                    if (trimmed.startsWith('#')) {
+                      return line.replace(/URI="([^"]+)"/gi, (_m, uri: string) => {
+                        return `URI="${hlsProxyPath(new URL(uri, finalUrl).href)}"`
+                      })
+                    }
+                    return hlsProxyPath(new URL(trimmed, finalUrl).href)
+                  })
+                  .join('\n')
+                res.setHeader('content-type', 'application/vnd.apple.mpegurl')
+                res.end(Buffer.from(rewrittenPlaylist))
+                return
+              }
+
+              if (cdnCt) res.setHeader('content-type', cdnCt)
+              res.end(cdnBuf)
+              return
+            } catch {
+              // Fall through to redirect.
+            }
+          }
+        }
+
+        res.status(302)
+        res.setHeader('location', rewritten)
+        res.setHeader('cache-control', 'private, no-store')
+        res.end()
         return
       }
 

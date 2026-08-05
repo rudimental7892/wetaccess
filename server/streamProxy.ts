@@ -1,38 +1,123 @@
 import type { Connect } from 'vite'
 import { randomUUID } from 'node:crypto'
 import {
-  aafStillUrlFromFakeHls,
-  hlsProxyPath,
+  cloudFrontExpiryUnix,
+  fetchProxiedMedia,
+  isCloudFrontUrlExpired,
+  resolveWet3ProxyNestedUrl,
   rewriteStreamLocation,
   wet3FetchHeaders,
 } from './hlsProxyCore'
 
 const WET3_ORIGIN = 'https://wet3.click'
 
+type ProxyRes = {
+  statusCode: number
+  setHeader: (k: string, v: string) => void
+  end: (b?: string | Buffer) => void
+}
+
+function sendJson(res: ProxyRes, status: number, body: Record<string, unknown>) {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.end(JSON.stringify(body))
+}
+
 /**
- * Intercept stream-v2 so Bunny/CDN redirects are rewritten to /api/hls-proxy.
- * Vite's http-proxy does not reliably let us rewrite Location for this case.
+ * Serve CDN media through our HLS proxy so the browser never requests Bunny/AAF
+ * directly (Bunny Referer-gates to wet3.click → 403 from localhost / hls.js).
+ */
+async function serveProxiedLocation(res: ProxyRes, location: string): Promise<void> {
+  const rewritten = rewriteStreamLocation(location)
+
+  if (rewritten.startsWith('/api/hls-proxy')) {
+    const nested = new URL(rewritten, 'http://localhost').searchParams.get('url')
+    if (nested) {
+      const proxied = await fetchProxiedMedia(nested)
+      res.statusCode = proxied.status
+      if (proxied.contentType) {
+        res.setHeader('Content-Type', proxied.contentType)
+      }
+      res.setHeader('Cache-Control', 'private, no-store')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      // Tell clients the stable same-origin play URL (segments already rewritten).
+      res.setHeader('X-Wetaccess-Play-Url', rewritten)
+      res.end(proxied.body)
+      return
+    }
+  }
+
+  res.statusCode = 302
+  res.setHeader('Location', rewritten)
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.end()
+}
+
+async function fetchWet3Stream(targetUrl: string, attempts = 3) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(targetUrl, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: wet3FetchHeaders({
+          Cookie: `wet3_user_id=${randomUUID()}`,
+        }),
+      })
+    } catch (error) {
+      lastError = error
+      if (attempt < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)))
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
+/**
+ * Intercept stream-v2 so Bunny/CDN never reaches the browser.
+ * Resolves wet3 redirects server-side and returns a rewritten playlist (or a
+ * same-origin hls-proxy Location). Vite's http-proxy alone is not reliable here.
  */
 export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
   return (req, res, next) => {
     const url = req.url ?? ''
-    const proxyMatch = url.match(/^\/wet3-api\/api\/stream-v2\/proxy(?:\.m3u8)?\?/)
+    // wet3 now uses proxy-m3u8; older builds used proxy / proxy.m3u8.
+    const proxyMatch = url.match(/^\/wet3-api\/api\/stream-v2\/proxy(?:-m3u8|\.m3u8)?(?:\?|$)/)
     if (proxyMatch) {
-      try {
-        const parsed = new URL(url, 'http://localhost')
-        const nested = parsed.searchParams.get('url')
-        const still = nested ? aafStillUrlFromFakeHls(nested) : null
-        if (still) {
-          res.statusCode = 302
-          res.setHeader('Location', hlsProxyPath(still))
-          res.setHeader('Cache-Control', 'private, no-store')
-          res.end()
-          return
+      void (async () => {
+        try {
+          const parsed = new URL(url, 'http://localhost')
+          const nested = parsed.searchParams.get('url')
+          if (!nested) {
+            sendJson(res, 400, {
+              error: 'missing target URL',
+              detail: 'wet3 proxy-m3u8 redirect had no url= parameter',
+            })
+            return
+          }
+
+          if (isCloudFrontUrlExpired(nested)) {
+            const expires = cloudFrontExpiryUnix(nested)
+            sendJson(res, 502, {
+              error: 'aaf signature expired',
+              detail: `wet3 returned an AllAccessFans CloudFront URL that expired at ${expires} (unix). Fresh stream-v2 calls are still serving stale signatures — AAF playback cannot work until wet3 refreshes tokens. Bunny/YouFanly videos should still play.`,
+              expires,
+            })
+            return
+          }
+
+          const resolved = resolveWet3ProxyNestedUrl(nested)
+          if (resolved) {
+            await serveProxiedLocation(res, nested)
+            return
+          }
+        } catch {
+          // fall through to wet3 proxy
         }
-      } catch {
-        // fall through to wet3 proxy
-      }
-      next()
+        next()
+      })()
       return
     }
 
@@ -50,28 +135,19 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
     }
 
     const mediaId = decodeURIComponent(match[1])
-    if (mediaId === 'proxy' || mediaId === 'proxy.m3u8') {
+    if (mediaId === 'proxy' || mediaId === 'proxy.m3u8' || mediaId === 'proxy-m3u8') {
       next()
       return
     }
 
     const targetUrl = `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
 
-    void fetch(targetUrl, {
-      method: 'GET',
-      redirect: 'manual',
-      headers: wet3FetchHeaders({
-        Cookie: `wet3_user_id=${randomUUID()}`,
-      }),
-    })
+    void fetchWet3Stream(targetUrl)
       .then(async (upstream) => {
         const location = upstream.headers.get('location')
 
         if (location) {
-          res.statusCode = 302
-          res.setHeader('Location', rewriteStreamLocation(location))
-          res.setHeader('Cache-Control', 'private, no-store')
-          res.end()
+          await serveProxiedLocation(res, location)
           return
         }
 

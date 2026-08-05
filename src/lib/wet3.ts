@@ -97,6 +97,39 @@ export function streamUrl(mediaId: string): string {
   return `${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`
 }
 
+/**
+ * Force any CDN/absolute stream URL onto same-origin proxies.
+ * Bunny returns 403 unless Referer is wet3.click — the browser must never
+ * fetch b-cdn.net directly from hls.js / <video>.
+ */
+export function ensureProxiedPlayUrl(raw: string): string {
+  try {
+    const url = new URL(raw, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    const host = url.hostname
+
+    if (host.endsWith('.b-cdn.net') || host.endsWith('allaccessfans.co') || host.endsWith('.wasabisys.com')) {
+      return `/api/hls-proxy?url=${encodeURIComponent(url.href)}`
+    }
+
+    if (host === 'wet3.click' || host === 'www.wet3.click') {
+      return `${API_BASE}${url.pathname}${url.search}`
+    }
+
+    // Already same-origin (or relative resolved against our origin).
+    if (typeof window === 'undefined' || url.origin === window.location.origin) {
+      return `${url.pathname}${url.search}`
+    }
+  } catch {
+    // fall through
+  }
+
+  if (raw.startsWith('/')) {
+    return raw
+  }
+
+  return raw
+}
+
 /** HLS watch page (open in a new tab) — avoids dumping wet3 "Proxy Error" text. */
 export function watchUrl(mediaId: string): string {
   return `#/watch/${encodeURIComponent(mediaId)}`

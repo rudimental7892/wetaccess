@@ -65,6 +65,67 @@ export function aafStillUrlFromFakeHls(nested: string): string | null {
   }
 }
 
+/** CloudFront `Expires=` from wet3-signed AAF URLs (unix seconds). */
+export function cloudFrontExpiryUnix(rawUrl: string): number | null {
+  try {
+    const value = new URL(rawUrl).searchParams.get('Expires')
+    if (!value) {
+      return null
+    }
+    const expires = Number.parseInt(value, 10)
+    return Number.isFinite(expires) ? expires : null
+  } catch {
+    return null
+  }
+}
+
+export function isCloudFrontUrlExpired(rawUrl: string, skewSeconds = 30): boolean {
+  const expires = cloudFrontExpiryUnix(rawUrl)
+  if (expires == null) {
+    return false
+  }
+  return expires <= Math.floor(Date.now() / 1000) - skewSeconds
+}
+
+/**
+ * Resolve wet3's `/api/stream-v2/proxy-m3u8?url=` (and older proxy paths) to a
+ * same-origin playable URL, or null if the nested target cannot be salvaged.
+ */
+export function resolveWet3ProxyNestedUrl(nested: string): string | null {
+  try {
+    const still = aafStillUrlFromFakeHls(nested)
+    if (still) {
+      return hlsProxyPath(still)
+    }
+
+    const nestedUrl = new URL(nested)
+    if (nestedUrl.hostname.endsWith('.b-cdn.net')) {
+      return hlsProxyPath(nested)
+    }
+
+    // Direct JPEG/PNG stills now come through proxy-m3u8 without the fake .m3u8 path.
+    if (
+      nestedUrl.hostname.endsWith('allaccessfans.co') &&
+      /\.(jpe?g|png|gif|webp)$/i.test(nestedUrl.pathname)
+    ) {
+      return hlsProxyPath(nested)
+    }
+
+    // AAF HLS: wet3's broker is currently Proxy Error; try CDN via our proxy when
+    // the signature is still fresh. Expired signatures cannot be repaired here.
+    if (nestedUrl.hostname.endsWith('allaccessfans.co')) {
+      if (isCloudFrontUrlExpired(nested)) {
+        return null
+      }
+      return hlsProxyPath(nested)
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
 /** Rewrite Location from stream-v2 into a same-origin HLS proxy URL when needed. */
 export function rewriteStreamLocation(location: string): string {
   const absolute = location.startsWith('http')
@@ -78,18 +139,16 @@ export function rewriteStreamLocation(location: string): string {
       return hlsProxyPath(absolute)
     }
 
+    // Matches proxy, proxy.m3u8, and the current proxy-m3u8 broker path.
     if (parsed.pathname.includes('/api/stream-v2/proxy')) {
       const nested = parsed.searchParams.get('url')
       if (nested) {
-        const still = aafStillUrlFromFakeHls(nested)
-        if (still) {
-          return hlsProxyPath(still)
+        const resolved = resolveWet3ProxyNestedUrl(nested)
+        if (resolved) {
+          return resolved
         }
-
-        const nestedHost = new URL(nested).hostname
-        if (nestedHost.endsWith('.b-cdn.net')) {
-          return hlsProxyPath(nested)
-        }
+        // Expired / unsalvageable AAF URL — keep a wet3-api hop so the player
+        // can read wet3's "Proxy Error" / our clearer middleware JSON.
       }
       if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
         return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
@@ -191,34 +250,65 @@ export async function fetchProxiedMedia(targetUrl: string): Promise<{
     }
   }
 
-  const response = await fetch(targetUrl, {
-    redirect: 'follow',
-    headers: fetchHeadersForTarget(targetUrl),
-  })
+  let lastError: unknown
+  const maxAttempts = 3
 
-  const contentType = response.headers.get('content-type')
-  const buffer = Buffer.from(await response.arrayBuffer())
-  const finalUrl = response.url || targetUrl
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(targetUrl, {
+        redirect: 'follow',
+        headers: fetchHeadersForTarget(targetUrl),
+      })
 
-  const looksLikePlaylist =
-    (contentType ?? '').includes('mpegurl') ||
-    (contentType ?? '').includes('m3u8') ||
-    buffer.subarray(0, 7).toString('utf8').startsWith('#EXTM3U')
+      const contentType = response.headers.get('content-type')
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const finalUrl = response.url || targetUrl
 
-  if (looksLikePlaylist) {
-    const rewritten = rewritePlaylistBody(buffer.toString('utf8'), finalUrl)
-    return {
-      status: response.status,
-      contentType: 'application/vnd.apple.mpegurl',
-      body: Buffer.from(rewritten),
-      finalUrl,
+      // Retry transient CDN failures (timeouts sometimes surface as empty 5xx / network).
+      if (response.status >= 500 && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)))
+        continue
+      }
+
+      const looksLikePlaylist =
+        (contentType ?? '').includes('mpegurl') ||
+        (contentType ?? '').includes('m3u8') ||
+        buffer.subarray(0, 7).toString('utf8').startsWith('#EXTM3U')
+
+      if (looksLikePlaylist) {
+        const rewritten = rewritePlaylistBody(buffer.toString('utf8'), finalUrl)
+        return {
+          status: response.status,
+          contentType: 'application/vnd.apple.mpegurl',
+          body: Buffer.from(rewritten),
+          finalUrl,
+        }
+      }
+
+      return {
+        status: response.status,
+        contentType,
+        body: buffer,
+        finalUrl,
+      }
+    } catch (error) {
+      lastError = error
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)))
+        continue
+      }
     }
   }
 
   return {
-    status: response.status,
-    contentType,
-    body: buffer,
-    finalUrl,
+    status: 502,
+    contentType: 'application/json',
+    body: Buffer.from(
+      JSON.stringify({
+        error: 'hls proxy failed',
+        detail: lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown'),
+      }),
+    ),
+    finalUrl: targetUrl,
   }
 }

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
-import { imageUrl, streamUrl, thumbnailUrl, type MediaItem } from '../lib/wet3'
+import {
+  ensureProxiedPlayUrl,
+  imageUrl,
+  streamUrl,
+  thumbnailUrl,
+  type MediaItem,
+} from '../lib/wet3'
 
 type WatchViewProps = {
   mediaId: string
@@ -8,16 +14,22 @@ type WatchViewProps = {
 }
 
 const AAF_BROKER_DOWN =
-  'AllAccessFans playback is down: wet3’s stream broker returns “Proxy Error”, and AAF’s CDN now requires CloudFront signed cookies. YouFanly (Bunny) videos should still play.'
+  'AllAccessFans playback is down: wet3 is serving expired CloudFront signatures (and its proxy-m3u8 broker returns “Proxy Error”). YouFanly (Bunny) videos should still play.'
+
+const BUNNY_REFERER_HINT =
+  'Stream CDN blocked the request (HTTP 403). Playback must stay on the wetaccess HLS proxy — retry, or hard-refresh the watch tab.'
 
 /**
  * Resolve the stream URL before handing it to the player so JSON 502s from our
  * wet3 proxy are not fed into native Safari HLS (which only showed a vague error).
+ *
+ * Critical: never return a bare Bunny/AAF URL. Those 403 without Referer: wet3.click.
  */
 async function preflightStream(
   startUrl: string,
 ): Promise<{ ok: true; playUrl: string } | { ok: false; message: string }> {
-  let url = startUrl
+  let url = ensureProxiedPlayUrl(startUrl)
+
   for (let hop = 0; hop < 6; hop += 1) {
     let response: Response
     try {
@@ -31,19 +43,26 @@ async function preflightStream(
     }
 
     const location = response.headers.get('Location')
-    if (location && (response.status === 301 || response.status === 302 || response.status === 303 || response.status === 307 || response.status === 308)) {
-      const next = new URL(location, window.location.origin)
-      // AAF playlist still goes through wet3’s broken broker — fail early with a clear reason.
+    if (
+      location &&
+      (response.status === 301 ||
+        response.status === 302 ||
+        response.status === 303 ||
+        response.status === 307 ||
+        response.status === 308)
+    ) {
+      // Always map CDN / wet3 absolute redirects onto same-origin proxies.
+      const next = ensureProxiedPlayUrl(location)
+
       if (
-        next.pathname.includes('/api/stream-v2/proxy') &&
-        next.searchParams.get('url')?.includes('allaccessfans.co')
+        next.includes('/api/stream-v2/proxy') &&
+        (next.includes('allaccessfans.co') ||
+          decodeURIComponent(next).includes('allaccessfans.co'))
       ) {
-        const broker = await probeWet3Broker(next.pathname + next.search)
-        if (!broker.ok) {
-          return broker
-        }
+        return probeWet3Broker(next)
       }
-      url = next.pathname + next.search
+
+      url = next
       continue
     }
 
@@ -58,12 +77,15 @@ async function preflightStream(
     }
 
     if (head.trimStart().startsWith('#EXTM3U') || contentType.includes('mpegurl')) {
-      return { ok: true, playUrl: url }
+      // Prefer stable proxy URL advertised by stream middleware when present.
+      const playHeader = response.headers.get('X-Wetaccess-Play-Url')
+      const playUrl = ensureProxiedPlayUrl(playHeader || url)
+      return { ok: true, playUrl }
     }
 
-    // Progressive media (rare) — let the video element try.
+    // Progressive media (rare) — let the video element try (still same-origin if proxied).
     if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
-      return { ok: true, playUrl: url }
+      return { ok: true, playUrl: ensureProxiedPlayUrl(url) }
     }
 
     return { ok: false, message: explainUpstreamFailure(response.status, head, url) }
@@ -76,7 +98,7 @@ async function probeWet3Broker(
   proxyPath: string,
 ): Promise<{ ok: true; playUrl: string } | { ok: false; message: string }> {
   try {
-    const response = await fetch(proxyPath, {
+    const response = await fetch(ensureProxiedPlayUrl(proxyPath), {
       method: 'GET',
       redirect: 'manual',
       credentials: 'same-origin',
@@ -86,7 +108,11 @@ async function probeWet3Broker(
       return new TextDecoder().decode(slice)
     })
     if (response.ok && head.trimStart().startsWith('#EXTM3U')) {
-      return { ok: true, playUrl: proxyPath }
+      const playHeader = response.headers.get('X-Wetaccess-Play-Url')
+      return {
+        ok: true,
+        playUrl: ensureProxiedPlayUrl(playHeader || proxyPath),
+      }
     }
     return { ok: false, message: explainUpstreamFailure(response.status, head, proxyPath) }
   } catch {
@@ -101,7 +127,12 @@ function explainUpstreamFailure(status: number, head: string, url: string): stri
   }
   try {
     const json = JSON.parse(trimmed) as { error?: string; detail?: string }
-    if (json.detail?.includes('Proxy Error') || json.error?.includes('proxy')) {
+    if (
+      json.error === 'aaf signature expired' ||
+      json.detail?.toLowerCase().includes('expired') ||
+      json.detail?.includes('Proxy Error') ||
+      json.error?.includes('proxy')
+    ) {
       return AAF_BROKER_DOWN
     }
     if (json.detail || json.error) {
@@ -110,8 +141,11 @@ function explainUpstreamFailure(status: number, head: string, url: string): stri
   } catch {
     // not JSON
   }
-  if (trimmed.includes('MissingKey')) {
-    return 'AAF CDN blocked the playlist (CloudFront MissingKey). Wet3 normally signs this; its broker is failing.'
+  if (trimmed.includes('MissingKey') || trimmed.includes('AccessDenied')) {
+    return 'AAF CDN blocked the playlist (expired/invalid CloudFront signature). Wet3 is not refreshing tokens.'
+  }
+  if (status === 403) {
+    return BUNNY_REFERER_HINT
   }
   if (url.includes('allaccessfans.co') || url.includes('stream-v2/proxy')) {
     return AAF_BROKER_DOWN
@@ -120,13 +154,14 @@ function explainUpstreamFailure(status: number, head: string, url: string): stri
 }
 
 /**
- * In-app HLS player. AAF videos need wet3's stream-v2 broker (CDN is cookie-signed);
- * opening the raw m3u8 in a new tab often shows wet3's plain-text "Proxy Error".
+ * In-app HLS player. All CDN hops go through same-origin proxies that set
+ * Referer: https://wet3.click/ — required by Bunny, broken if the browser hits b-cdn directly.
  */
 export function WatchView({ mediaId, posterItem }: WatchViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('Loading stream…')
+  const [playUrl, setPlayUrl] = useState<string | null>(null)
   const src = streamUrl(mediaId)
   const poster = posterItem
     ? thumbnailUrl(posterItem)
@@ -140,6 +175,7 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
     let cancelled = false
     let onNativeError: (() => void) | null = null
     setError(null)
+    setPlayUrl(null)
     setStatus('Loading stream…')
 
     const fail = (message: string) => {
@@ -149,11 +185,16 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
       }
     }
 
-    const startPlayback = (playUrl: string) => {
+    const startPlayback = (resolvedUrl: string) => {
+      // Final guard: never hand a bare CDN URL to hls.js / <video>.
+      const safeUrl = ensureProxiedPlayUrl(resolvedUrl)
+      setPlayUrl(safeUrl)
+
       // Prefer hls.js when MSE is available — clearer retries than Safari native on proxy errors.
       if (Hls.isSupported()) {
         hls = new Hls({
           enableWorker: true,
+          // Absolute proxied URLs already; don't let hls invent cross-origin bases.
           manifestLoadingMaxRetry: 4,
           manifestLoadingRetryDelay: 800,
           levelLoadingMaxRetry: 4,
@@ -161,7 +202,7 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
           fragLoadingMaxRetry: 5,
           fragLoadingRetryDelay: 600,
         })
-        hls.loadSource(playUrl)
+        hls.loadSource(safeUrl)
         hls.attachMedia(video)
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (!cancelled) setStatus('')
@@ -170,6 +211,13 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal || cancelled) return
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // One automatic resume; don't infinite-loop on hard 403s.
+            if (data.response?.code === 403) {
+              fail(BUNNY_REFERER_HINT)
+              hls?.destroy()
+              hls = null
+              return
+            }
             setStatus('Network glitch — retrying…')
             hls?.startLoad()
             return
@@ -187,9 +235,9 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
 
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         onNativeError = () => {
-          fail(AAF_BROKER_DOWN)
+          fail(BUNNY_REFERER_HINT)
         }
-        video.src = playUrl
+        video.src = safeUrl
         video.addEventListener('error', onNativeError)
         video.addEventListener('loadedmetadata', () => {
           if (!cancelled) setStatus('')
@@ -216,6 +264,7 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
       cancelled = true
       hls?.destroy()
       if (onNativeError) {
+        video.removeAttribute('src')
         video.removeEventListener('error', onNativeError)
       }
       video.removeAttribute('src')
@@ -241,8 +290,14 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
           <button type="button" className="ghost-btn" onClick={() => window.location.reload()}>
             Retry
           </button>
-          <a className="ghost-btn" href={src} target="_blank" rel="noreferrer">
-            Open raw stream
+          {/* Same-origin proxy path only — never bare Bunny (403 without wet3 Referer). */}
+          <a
+            className="ghost-btn"
+            href={playUrl || src}
+            target="_blank"
+            rel="noopener"
+          >
+            Open proxied stream
           </a>
         </div>
       ) : null}
