@@ -523,6 +523,51 @@ export type FetchCreatorsOptions = {
   twitterOnly?: boolean
 }
 
+/**
+ * Wet3 switched `/api/creators` from JSON to HTMX HTML tiles (2026).
+ * Parse creator cards: @username, avatar, "N uploads".
+ */
+export function parseCreatorsHtml(html: string): Creator[] {
+  const items: Creator[] = []
+  const seen = new Set<string>()
+  const tileRe =
+    /href="\/user\/([^"]+)"[\s\S]{0,1200}?(?=href="\/user\/|hx-get=|$)/gi
+
+  let match: RegExpExecArray | null
+  while ((match = tileRe.exec(html)) !== null) {
+    const username = match[1]?.trim()
+    if (!username || seen.has(username)) continue
+    seen.add(username)
+
+    const block = match[0]
+    const img = block.match(/<img[^>]+src="([^"]+)"/i)?.[1] ?? '/favicon.svg'
+    const uploads =
+      block.match(/(\d[\d,]*)\s*uploads/i)?.[1]?.replace(/,/g, '') ?? '0'
+    const display =
+      block.match(/@([a-zA-Z0-9_.-]+)/)?.[1] ?? username
+
+    items.push({
+      u: username,
+      d: display,
+      ds: uploads,
+      rs: Number(uploads) || 0,
+      p: img,
+      vn: '0',
+      vi: '0',
+    })
+  }
+
+  return items
+}
+
+function creatorsHtmlHasMore(html: string, page: number): boolean {
+  const next = page + 1
+  return (
+    html.includes(`page=${next}`) ||
+    new RegExp(`hx-get="[^"]*[?&]page=${next}(?:&|")`).test(html)
+  )
+}
+
 export async function fetchCreators(
   page: number,
   limit: number,
@@ -542,7 +587,12 @@ export async function fetchCreators(
     params.set('twitterOnly', 'true')
   }
 
-  const response = await fetch(`${API_BASE}/api/creators?${params}`)
+  const response = await fetch(`${API_BASE}/api/creators?${params}`, {
+    headers: {
+      Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
+      'HX-Request': 'true',
+    },
+  })
 
   if (!response.ok) {
     throw new Error(
@@ -552,7 +602,44 @@ export async function fetchCreators(
     )
   }
 
-  return response.json() as Promise<CreatorsResponse>
+  const contentType = response.headers.get('content-type') ?? ''
+  const raw = await response.text()
+
+  // Legacy JSON (if wet3 reverts) or HTML tiles.
+  if (contentType.includes('application/json') || raw.trimStart().startsWith('{')) {
+    try {
+      const data = JSON.parse(raw) as CreatorsResponse
+      if (Array.isArray(data.items)) {
+        return data
+      }
+    } catch {
+      // fall through to HTML
+    }
+  }
+
+  const items = parseCreatorsHtml(raw)
+  if (items.length === 0 && raw.trimStart().startsWith('<')) {
+    // Empty page is ok; only throw when body looks like a hard error page.
+    if (raw.includes('404 Not Found') || raw.includes('Security Check')) {
+      throw new Error(
+        options.twitterOnly
+          ? 'Twitter creators HTML empty or blocked'
+          : 'Creators HTML empty or blocked',
+      )
+    }
+  }
+
+  const hasMore = creatorsHtmlHasMore(raw, page)
+  const total = hasMore
+    ? page * Math.max(items.length, limit) + 1
+    : (page - 1) * Math.max(limit, 1) + items.length
+
+  return {
+    items,
+    total,
+    page,
+    limit,
+  }
 }
 
 export function dropThumbnailUrl(path: string | null | undefined): string {
@@ -819,18 +906,70 @@ export async function fetchDrop(
   return unlockAndFetchDrop(dropId)
 }
 
-export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
-  // Full catalog lives on paginated /api/profile (≈9/page). SSR mediaJson is
-  // often "[]" or a short embed — use it only as a supplement/fallback.
-  let fromApi: MediaItem[] = []
-  try {
-    fromApi = await fetchUserMediaFromProfileApi(username)
-  } catch {
-    fromApi = []
+/**
+ * Wet3 replaced JSON `/api/profile` + SSR `mediaJson` with HTMX
+ * `/api/user-media?username=&page=` HTML tiles linking to `/p/{id}`.
+ */
+export function parseUserMediaHtml(html: string, username: string): MediaItem[] {
+  const items: MediaItem[] = []
+  const seen = new Set<string>()
+  const tileRe =
+    /href="\/p\/([^"]+)"([\s\S]{0,900}?)(?=href="\/p\/|hx-get=|$)/gi
+
+  let match: RegExpExecArray | null
+  while ((match = tileRe.exec(html)) !== null) {
+    const id = match[1]?.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+
+    const block = match[0]
+    const thumb =
+      block.match(/<img[^>]+src="([^"]+)"/i)?.[1] ??
+      `/previews/${id}.webp`
+    const isVideo = /icon-play|class="[^"]*play/i.test(block)
+
+    items.push(
+      enrichMediaItem({
+        id,
+        media_type: isVideo ? '2' : '1',
+        src: 'aa',
+        path: thumb,
+        username,
+        webp_thumb: thumb.includes('.webp') ? thumb : null,
+      }),
+    )
   }
 
-  if (fromApi.length > 0) {
-    return fromApi
+  return items
+}
+
+function userMediaHtmlHasMore(html: string, page: number): boolean {
+  const next = page + 1
+  return (
+    html.includes(`page=${next}`) ||
+    new RegExp(`user-media[^"]*page=${next}`).test(html)
+  )
+}
+
+export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
+  // Primary: paginated HTMX user-media HTML.
+  try {
+    const fromTiles = await fetchUserMediaFromUserMediaApi(username)
+    if (fromTiles.length > 0) {
+      return fromTiles
+    }
+  } catch {
+    // fall through
+  }
+
+  // Legacy: /api/profile JSON (may 404 on current wet3).
+  try {
+    const fromApi = await fetchUserMediaFromProfileApi(username)
+    if (fromApi.length > 0) {
+      return fromApi
+    }
+  } catch {
+    // fall through
   }
 
   const response = await fetch(`${API_BASE}/user/${encodeURIComponent(username)}`)
@@ -843,26 +982,36 @@ export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
 
   const isChallengeShell =
     html.includes('Security Check - Wet3') ||
-    (html.includes('Security Check') && !html.includes('mediaJson'))
+    (html.includes('Security Check') && !html.includes('mediaJson') && !html.includes('/p/'))
 
-  if (!isChallengeShell && html.includes('mediaJson')) {
-    try {
-      const fromHtml = parseMediaJson(html)
-      if (fromHtml.length > 0) {
-        return fromHtml
+  if (!isChallengeShell) {
+    if (html.includes('mediaJson')) {
+      try {
+        const fromHtml = parseMediaJson(html)
+        if (fromHtml.length > 0) {
+          return fromHtml
+        }
+      } catch {
+        // fall through
       }
-    } catch {
-      // fall through
+    }
+
+    // Profile SSR may embed first page of tiles.
+    const embedded = parseUserMediaHtml(html, username)
+    if (embedded.length > 0) {
+      return embedded
     }
   }
 
   if (isChallengeShell) {
     throw new Error(
-      'wet3 Turnstile blocked /user/{username} (no mediaJson). Restart the Vite proxy so it injects wet3_user_id.',
+      'wet3 Turnstile blocked /user/{username}. Restart the Vite proxy so it injects wet3_user_id.',
     )
   }
 
-  throw new Error('No mediaJson in profile HTML and /api/profile returned 0 items')
+  throw new Error(
+    'No posts found — wet3 /api/user-media and profile scrape returned 0 items',
+  )
 }
 
 type ProfileApiMediaRow = {
@@ -892,8 +1041,47 @@ function mapProfileApiRows(
 }
 
 /**
- * `/api/profile/{user}` returns ~9 items per page. Walk pages until empty
- * (pridevips: 98 across 11 pages; page 12 = []).
+ * HTMX `/api/user-media?username=&page=` — primary catalog source on current wet3.
+ */
+async function fetchUserMediaFromUserMediaApi(username: string): Promise<MediaItem[]> {
+  const slug = username.toLowerCase()
+  const byId = new Map<string, MediaItem>()
+  const maxPages = 100
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = await fetch(
+      `${API_BASE}/api/user-media?username=${encodeURIComponent(slug)}&page=${page}`,
+      {
+        headers: {
+          Accept: 'text/html,*/*',
+          'HX-Request': 'true',
+        },
+      },
+    )
+
+    if (!response.ok) {
+      if (page === 1) {
+        throw new Error(`user-media API failed (${response.status})`)
+      }
+      break
+    }
+
+    const html = await response.text()
+    const rows = parseUserMediaHtml(html, slug)
+    for (const item of rows) {
+      byId.set(item.id, item)
+    }
+
+    if (rows.length === 0 || !userMediaHtmlHasMore(html, page)) {
+      break
+    }
+  }
+
+  return sortMediaNewestFirst([...byId.values()])
+}
+
+/**
+ * Legacy `/api/profile/{user}` JSON (~9/page). May 404 on current wet3.
  */
 async function fetchUserMediaFromProfileApi(username: string): Promise<MediaItem[]> {
   const slug = username.toLowerCase()
@@ -912,7 +1100,13 @@ async function fetchUserMediaFromProfileApi(username: string): Promise<MediaItem
       break
     }
 
-    const data = (await response.json()) as { media?: ProfileApiMediaRow[] }
+    const raw = await response.text()
+    let data: { media?: ProfileApiMediaRow[] }
+    try {
+      data = JSON.parse(raw) as { media?: ProfileApiMediaRow[] }
+    } catch {
+      throw new Error('Profile API returned non-JSON (wet3 API changed)')
+    }
     const rows = data.media ?? []
 
     if (rows.length === 0) {

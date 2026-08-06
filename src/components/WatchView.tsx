@@ -126,17 +126,31 @@ function explainUpstreamFailure(status: number, head: string, url: string): stri
     return AAF_BROKER_DOWN
   }
   try {
-    const json = JSON.parse(trimmed) as { error?: string; detail?: string }
-    if (
-      json.error === 'aaf signature expired' ||
-      json.detail?.toLowerCase().includes('expired') ||
-      json.detail?.includes('Proxy Error') ||
-      json.error?.includes('proxy')
-    ) {
-      return AAF_BROKER_DOWN
-    }
-    if (json.detail || json.error) {
-      return `Stream failed (${status}): ${json.detail ?? json.error}`
+    // Only parse when the body looks like JSON — m3u8/HTML used to throw
+    // "is not valid JSON" into the watch UI for every content page.
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      const json = JSON.parse(trimmed) as {
+        error?: string
+        detail?: string
+        message?: string
+      }
+      if (
+        json.error === 'stream_token_required' ||
+        json.message?.toLowerCase().includes('watch an ad')
+      ) {
+        return 'Stream needs an ad unlock token. Retry — wetaccess should auto-fetch st= from wet3.'
+      }
+      if (
+        json.error === 'aaf signature expired' ||
+        json.detail?.toLowerCase().includes('expired') ||
+        json.detail?.includes('Proxy Error') ||
+        json.error?.includes('proxy')
+      ) {
+        return AAF_BROKER_DOWN
+      }
+      if (json.detail || json.error || json.message) {
+        return `Stream failed (${status}): ${json.detail ?? json.error ?? json.message}`
+      }
     }
   } catch {
     // not JSON

@@ -388,12 +388,17 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
     } catch (loadError) {
       setCreators([])
       setTotal(0)
-      setError(
+      const msg =
         loadError instanceof Error
           ? loadError.message
           : twitterOnly
             ? 'Failed to load Twitter creators'
-            : 'Failed to load creators',
+            : 'Failed to load creators'
+      // Browser .json() on wet3 HTML used to surface as "is not valid JSON"
+      setError(
+        /not valid JSON|Unexpected token|JSON\.parse/i.test(msg)
+          ? 'Creators feed changed (wet3 HTML). Hard-refresh or restart `npm run dev` to load the HTML parser fix.'
+          : msg,
       )
     } finally {
       setLoading(false)

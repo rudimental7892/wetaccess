@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { obtainWet3StreamToken, streamV2UrlWithToken } from './_lib/wet3StreamToken'
 
 type VercelRequest = {
   method?: string
@@ -196,8 +197,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const search = incomingUrl.searchParams.toString()
-  const targetUrl = `${WET3_ORIGIN}/${path}${search ? `?${search}` : ''}`
+  let search = incomingUrl.searchParams.toString()
+  let targetUrl = `${WET3_ORIGIN}/${path}${search ? `?${search}` : ''}`
 
   const headers: Record<string, string> = {
     'User-Agent':
@@ -207,6 +208,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     Referer: `${WET3_ORIGIN}/`,
     Origin: WET3_ORIGIN,
     Cookie: `wet3_user_id=${randomUUID()}`,
+  }
+
+  // stream-v2/{id} without st= → wet3 returns 402 stream_token_required.
+  // Auto-complete ad gate once, then retry with ?st=.
+  const streamIdMatch = path.match(/^api\/stream-v2\/([^/]+)$/)
+  if (
+    streamIdMatch &&
+    !path.includes('proxy') &&
+    !incomingUrl.searchParams.get('st')
+  ) {
+    try {
+      const mediaId = decodeURIComponent(streamIdMatch[1])
+      const st = await obtainWet3StreamToken(mediaId, headers.Cookie)
+      if (st) {
+        targetUrl = streamV2UrlWithToken(mediaId, st)
+        search = `st=${encodeURIComponent(st)}`
+      }
+    } catch {
+      // fall through — original request may still work for unlocked guests
+    }
   }
 
   const contentType = headerValue(req.headers['content-type'])

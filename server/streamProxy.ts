@@ -8,6 +8,7 @@ import {
   rewriteStreamLocation,
   wet3FetchHeaders,
 } from './hlsProxyCore'
+import { obtainWet3StreamToken, streamV2UrlWithToken } from './wet3StreamToken'
 
 const WET3_ORIGIN = 'https://wet3.click'
 
@@ -140,12 +141,29 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
       return
     }
 
-    const targetUrl = `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
+    // Honor client-supplied st= (ad completion token) when present.
+    const incoming = new URL(url, 'http://localhost')
+    const existingSt = incoming.searchParams.get('st')
+    const guestCookie = `wet3_user_id=${randomUUID()}`
 
-    void fetchWet3Stream(targetUrl)
-      .then(async (upstream) => {
+    void (async () => {
+      try {
+        let targetUrl = existingSt
+          ? streamV2UrlWithToken(mediaId, existingSt)
+          : `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
+
+        let upstream = await fetchWet3Stream(targetUrl)
+
+        // Wet3 now requires stream token after ads: 402 JSON stream_token_required.
+        if (!upstream.headers.get('location') && upstream.status === 402) {
+          const st = await obtainWet3StreamToken(mediaId, guestCookie)
+          if (st) {
+            targetUrl = streamV2UrlWithToken(mediaId, st)
+            upstream = await fetchWet3Stream(targetUrl)
+          }
+        }
+
         const location = upstream.headers.get('location')
-
         if (location) {
           await serveProxiedLocation(res, location)
           return
@@ -158,8 +176,7 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
         }
         res.setHeader('Cache-Control', 'private, no-store')
         res.end(Buffer.from(await upstream.arrayBuffer()))
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         res.statusCode = 502
         res.setHeader('Content-Type', 'application/json')
         res.end(
@@ -168,6 +185,7 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
             detail: error instanceof Error ? error.message : String(error),
           }),
         )
-      })
+      }
+    })()
   }
 }
