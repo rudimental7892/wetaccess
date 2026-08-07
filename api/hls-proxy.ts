@@ -16,6 +16,7 @@ export const config = {
 
 const WET3_ORIGIN = 'https://wet3.click'
 const AAF_ORIGIN = 'https://allaccessfans.co'
+const LZ_ORIGIN = 'https://leakedzone.com'
 
 function isAllowedHlsUrl(raw: string): boolean {
   try {
@@ -27,7 +28,9 @@ function isAllowedHlsUrl(raw: string): boolean {
       host.endsWith('.allaccessfans.co') ||
       host === 'media.allaccessfans.co' ||
       host === 'wet3.click' ||
-      host === 'www.wet3.click'
+      host === 'www.wet3.click' ||
+      host === 'leakedzone.com' ||
+      host === 'www.leakedzone.com'
     )
   } catch {
     return false
@@ -62,11 +65,19 @@ function fetchHeadersFor(targetUrl: string): Record<string, string> {
   }
 
   try {
-    if (new URL(targetUrl).hostname.endsWith('allaccessfans.co')) {
+    const host = new URL(targetUrl).hostname
+    if (host.endsWith('allaccessfans.co')) {
       return {
         ...base,
         Referer: `${AAF_ORIGIN}/`,
         Origin: AAF_ORIGIN,
+      }
+    }
+    if (host === 'leakedzone.com' || host === 'www.leakedzone.com') {
+      return {
+        ...base,
+        Referer: `${LZ_ORIGIN}/`,
+        Origin: LZ_ORIGIN,
       }
     }
   } catch {

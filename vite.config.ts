@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import { createAcProxyMiddleware } from './server/acProxy'
 import { createFbProxyMiddleware } from './server/fbProxy'
 import { createFtProxyMiddleware } from './server/ftProxy'
+import { createLzProxyMiddleware } from './server/lzProxy'
 import { createDropsMiddleware } from './server/dropsApi'
 import { createDurationMiddleware } from './server/wet3Duration'
 import { createHlsProxyMiddleware } from './server/hlsProxy'
@@ -59,6 +60,7 @@ function attachLocalApis() {
       server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())
+      server.middlewares.use(createLzProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())
@@ -69,6 +71,7 @@ function attachLocalApis() {
       server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())
+      server.middlewares.use(createLzProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())

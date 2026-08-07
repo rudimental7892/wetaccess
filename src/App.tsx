@@ -11,6 +11,7 @@ import './App.css'
 import { AfricanCastingView } from './components/AfricanCastingView'
 import { FanBusyView } from './components/FanBusyView'
 import { FanTribeView } from './components/FanTribeView'
+import { LeakedZoneView } from './components/LeakedZoneView'
 import { AppShell } from './components/AppShell'
 import {
   DropDetailView,
@@ -226,6 +227,15 @@ function App() {
   if (session.site === 'fantribe') {
     return (
       <FanTribeView
+        onSwitchSite={handleSwitchSite}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (session.site === 'leakedzone') {
+    return (
+      <LeakedZoneView
         onSwitchSite={handleSwitchSite}
         onLogout={handleLogout}
       />

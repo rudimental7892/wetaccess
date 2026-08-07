@@ -1,5 +1,6 @@
 const WET3_ORIGIN = 'https://wet3.click'
 const AAF_ORIGIN = 'https://allaccessfans.co'
+const LZ_ORIGIN = 'https://leakedzone.com'
 
 const ALLOWED_HOST_SUFFIXES = [
   '.b-cdn.net',
@@ -13,6 +14,8 @@ const ALLOWED_HOSTS = new Set([
   'www.wet3.click',
   'media.allaccessfans.co',
   's3.eu-west-1.wasabisys.com',
+  'leakedzone.com',
+  'www.leakedzone.com',
 ])
 
 export function isAllowedHlsUrl(raw: string): boolean {
@@ -225,6 +228,13 @@ export function fetchHeadersForTarget(
       return wet3FetchHeaders({
         Referer: `${AAF_ORIGIN}/`,
         Origin: AAF_ORIGIN,
+        ...extra,
+      })
+    }
+    if (host === 'leakedzone.com' || host === 'www.leakedzone.com') {
+      return wet3FetchHeaders({
+        Referer: `${LZ_ORIGIN}/`,
+        Origin: LZ_ORIGIN,
         ...extra,
       })
     }

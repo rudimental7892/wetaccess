@@ -1363,6 +1363,12 @@
   background: linear-gradient(135deg, #0d9488, #0f766e);
 }
 
+.site-card-mark.lz,
+.app-brand-mark.lz {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #f5f3ff;
+}
+
 .gate-field {
   display: grid;
   gap: 6px;

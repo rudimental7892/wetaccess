@@ -65,6 +65,18 @@ export function SitePicker({ onPick, onLogout }: SitePickerProps) {
               Convex getAllPosts — locked CDN/Stream + KYC
             </span>
           </button>
+
+          <button
+            type="button"
+            className="site-card"
+            onClick={() => onPick('leakedzone')}
+          >
+            <span className="site-card-mark lz">LZ</span>
+            <span className="site-card-title">LeakedZone</span>
+            <span className="site-card-sub">
+              Guest HTML scrape — photos CDN + JWPlayer HLS
+            </span>
+          </button>
         </div>
 
         <button type="button" className="gate-ghost" onClick={onLogout}>
