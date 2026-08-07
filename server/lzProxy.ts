@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Connect } from 'vite'
 import {
   fetchLzCreators,
+  fetchLzPlaylistBody,
   fetchLzProfile,
   fetchLzStream,
 } from '../api/_lib/leakedzoneCore'
@@ -32,6 +33,22 @@ export function createLzProxyMiddleware(): Connect.NextHandleFunction {
     const op = parsed.searchParams.get('op') ?? 'creators'
 
     void (async () => {
+      if (op === 'playlist') {
+        const slug = (parsed.searchParams.get('slug') ?? '').trim()
+        const id = (parsed.searchParams.get('id') ?? '').trim()
+        if (!slug || !id) {
+          sendJson(res, 400, { error: 'missing slug or id' })
+          return
+        }
+        const { body } = await fetchLzPlaylistBody(slug, id)
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
+        res.setHeader('Cache-Control', 'private, no-store')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.end(body)
+        return
+      }
+
       if (op === 'creators') {
         const page = Number.parseInt(parsed.searchParams.get('page') ?? '1', 10)
         const networks = parsed.searchParams.get('networks') ?? ''

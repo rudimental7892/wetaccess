@@ -76,11 +76,157 @@ export type LzStreamResult = {
   id: string
   m3u8: string
   hls: string
+  /** Same-origin playlist that rewrites Bunny segments (may 502 on CF-blocked hosts). */
+  playlist: string
   poster: string | null
+  /** Direct LZ watch page — used when Vercel IP is CF-blocked for /m3u8. */
+  embedUrl: string
+  source?: 'direct' | 'relay'
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+function envCookie(): string | undefined {
+  const raw =
+    (typeof process !== 'undefined' &&
+      (process.env.LZ_COOKIE || process.env.LEAKEDZONE_COOKIE)) ||
+    ''
+  return raw.trim() || undefined
+}
+
+function isCloudflareChallenge(status: number, text: string): boolean {
+  if (status === 403 || status === 503) {
+    if (
+      text.includes('Just a moment') ||
+      text.includes('cf-browser-verification') ||
+      text.includes('cf-challenge') ||
+      text.includes('challenge-platform') ||
+      text.includes('Attention Required')
+    ) {
+      return true
+    }
+  }
+  return (
+    text.includes('Just a moment') &&
+    (text.includes('cf-') || text.includes('Cloudflare'))
+  )
+}
+
+function looksLikeLzHtml(text: string): boolean {
+  return (
+    text.includes('storage/models') ||
+    text.includes('leakedzone') ||
+    text.includes('jwplayer') ||
+    text.includes('data-last=') ||
+    text.includes('file: f(') ||
+    text.includes('media-items')
+  )
+}
+
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent': UA,
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache',
+  'Sec-Ch-Ua':
+    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"macOS"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+}
+
+/** Sticky session cookies across warm-up + page fetches (per isolate). */
+let stickyCookie = ''
+
+function mergeSetCookie(res: Response): void {
+  // Node/undici may expose getSetCookie(); fall back to single header.
+  const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] }
+  const list =
+    typeof anyHeaders.getSetCookie === 'function'
+      ? anyHeaders.getSetCookie()
+      : []
+  const single = res.headers.get('set-cookie')
+  const parts = list.length > 0 ? list : single ? [single] : []
+  if (!parts.length) return
+  const jar = new Map<string, string>()
+  for (const piece of (stickyCookie ? stickyCookie.split('; ') : []).concat(
+    parts.map((p) => p.split(';')[0] ?? '').filter(Boolean),
+  )) {
+    const eq = piece.indexOf('=')
+    if (eq <= 0) continue
+    jar.set(piece.slice(0, eq), piece.slice(eq + 1))
+  }
+  stickyCookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
+}
+
+async function directFetchHtml(url: string): Promise<string> {
+  // Warm homepage once for Laravel session cookies when cold.
+  if (!stickyCookie && !envCookie()) {
+    try {
+      const warm = await fetch(`${LZ_ORIGIN}/`, {
+        headers: { ...BROWSER_HEADERS, Referer: `${LZ_ORIGIN}/` },
+        redirect: 'follow',
+      })
+      mergeSetCookie(warm)
+      await warm.text()
+    } catch {
+      // ignore warm-up failures
+    }
+  }
+
+  const headers: Record<string, string> = {
+    ...BROWSER_HEADERS,
+    Referer: `${LZ_ORIGIN}/`,
+    'Sec-Fetch-Site': 'same-origin',
+  }
+  const mergedCookie = [stickyCookie, envCookie()].filter(Boolean).join('; ')
+  if (mergedCookie) headers.Cookie = mergedCookie
+
+  const res = await fetch(url, { headers, redirect: 'follow' })
+  mergeSetCookie(res)
+  const text = await res.text()
+  if (isCloudflareChallenge(res.status, text)) {
+    throw new Error('Cloudflare challenge')
+  }
+  if (!res.ok) {
+    throw new Error(`LeakedZone HTTP ${res.status}`)
+  }
+  if (!looksLikeLzHtml(text) && text.length < 2000) {
+    throw new Error('Unexpected LeakedZone response')
+  }
+  return text
+}
+
+/**
+ * Jina reader returns full origin HTML with X-Return-Format: html.
+ * Bypasses Cloudflare blocks on Vercel/datacenter IPs (catalog pages).
+ */
+async function jinaFetchHtml(url: string): Promise<string> {
+  const relay = `https://r.jina.ai/${url}`
+  const res = await fetch(relay, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'X-Return-Format': 'html',
+      'X-Timeout': '45',
+      'User-Agent': UA,
+    },
+    redirect: 'follow',
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`HTML relay HTTP ${res.status}`)
+  }
+  if (!looksLikeLzHtml(text)) {
+    throw new Error('HTML relay returned non-LZ content')
+  }
+  return text
 }
 
 export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
@@ -88,32 +234,104 @@ export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
     ? pathOrUrl
     : `${LZ_ORIGIN}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`
 
-  let lastErr: unknown
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': UA,
-          Accept: 'text/html,application/xhtml+xml',
-          'Accept-Language': 'en-US,en;q=0.9',
-          Referer: `${LZ_ORIGIN}/`,
-        },
-        redirect: 'follow',
-      })
-      const text = await res.text()
-      if (text.includes('Just a moment') && text.includes('cf-browser-verification')) {
-        throw new Error('Cloudflare challenge (try again slowly)')
+  // Vercel/datacenter IPs get CF 403 on leakedzone.com — prefer HTML relay first.
+  const onVercel =
+    typeof process !== 'undefined' &&
+    (process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV))
+  const relayMode =
+    typeof process !== 'undefined' ? process.env.LZ_HTML_RELAY || '' : ''
+  const preferRelay =
+    relayMode === 'always' ||
+    relayMode === 'jina' ||
+    (onVercel && relayMode !== 'off' && relayMode !== 'direct')
+
+  const errors: string[] = []
+  const tryDirect = async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await directFetchHtml(url)
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e))
+        if (attempt < 1) await sleep(250 * (attempt + 1))
       }
-      if (!res.ok) {
-        throw new Error(`LeakedZone HTTP ${res.status}`)
-      }
-      return text
-    } catch (e) {
-      lastErr = e
-      if (attempt < 2) await sleep(400 * (attempt + 1))
     }
+    return null
   }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+  const tryRelay = async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await jinaFetchHtml(url)
+      } catch (e) {
+        errors.push(`relay: ${e instanceof Error ? e.message : String(e)}`)
+        if (attempt < 1) await sleep(400 * (attempt + 1))
+      }
+    }
+    return null
+  }
+
+  if (preferRelay) {
+    const viaRelay = await tryRelay()
+    if (viaRelay) return viaRelay
+    const viaDirect = await tryDirect()
+    if (viaDirect) return viaDirect
+  } else {
+    const viaDirect = await tryDirect()
+    if (viaDirect) return viaDirect
+    const viaRelay = await tryRelay()
+    if (viaRelay) return viaRelay
+  }
+
+  throw new Error(
+    `LeakedZone blocked this host (Cloudflare). ${errors.join(' · ')}`,
+  )
+}
+
+/** Fetch raw m3u8 body (no HTML relay — jina gets Unauthorized on /m3u8). */
+export async function lzFetchM3u8(m3u8Url: string): Promise<string> {
+  const headers: Record<string, string> = {
+    'User-Agent': UA,
+    Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+    Referer: `${LZ_ORIGIN}/`,
+    Origin: LZ_ORIGIN,
+  }
+  const cookie = [stickyCookie, envCookie()].filter(Boolean).join('; ')
+  if (cookie) headers.Cookie = cookie
+
+  const res = await fetch(m3u8Url, { headers, redirect: 'follow' })
+  const text = await res.text()
+  if (isCloudflareChallenge(res.status, text)) {
+    throw new Error('Cloudflare challenge on m3u8')
+  }
+  if (!res.ok) {
+    throw new Error(`m3u8 HTTP ${res.status}: ${text.slice(0, 120)}`)
+  }
+  if (!text.includes('#EXTM3U')) {
+    throw new Error(`m3u8 response missing EXTM3U: ${text.slice(0, 120)}`)
+  }
+  return text
+}
+
+/** Rewrite absolute segment URLs through same-origin HLS proxy (Bunny works on Vercel). */
+export function rewriteLzPlaylist(playlistText: string): string {
+  return playlistText
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) {
+        // URI="..." inside tags
+        return line.replace(/URI="([^"]+)"/gi, (_m, uri: string) => {
+          if (uri.startsWith('http')) {
+            return `URI="${hlsProxyUrl(uri)}"`
+          }
+          return `URI="${uri}"`
+        })
+      }
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return hlsProxyUrl(trimmed)
+      }
+      return line
+    })
+    .join('\n')
 }
 
 /** JWPlayer payload: slice(16,-16) + reverse + atob */
@@ -126,8 +344,17 @@ export function decodeJwFile(payload: string): string {
   return Buffer.from(reversed, 'base64').toString('utf8')
 }
 
-export function hlsProxyUrl(m3u8: string): string {
-  return `/api/hls-proxy?url=${encodeURIComponent(m3u8)}`
+export function hlsProxyUrl(target: string): string {
+  return `/api/hls-proxy?url=${encodeURIComponent(target)}`
+}
+
+export function lzPlaylistApiUrl(slug: string, id: string): string {
+  const qs = new URLSearchParams({ op: 'playlist', slug, id })
+  return `/api/lz?${qs.toString()}`
+}
+
+export function lzEmbedUrl(slug: string, id: string): string {
+  return `${LZ_ORIGIN}/${encodeURIComponent(slug)}/video/${encodeURIComponent(id)}`
 }
 
 function decodeHtmlEntities(s: string): string {
@@ -413,7 +640,23 @@ export async function fetchLzStream(
     slug: cleanSlug,
     id: cleanId,
     m3u8,
-    hls: hlsProxyUrl(m3u8),
+    // Prefer same-origin playlist rewrite (Bunny segments proxy fine on Vercel).
+    hls: lzPlaylistApiUrl(cleanSlug, cleanId),
+    playlist: lzPlaylistApiUrl(cleanSlug, cleanId),
     poster,
+    embedUrl: lzEmbedUrl(cleanSlug, cleanId),
   }
+}
+
+/**
+ * Resolve signed m3u8 → rewritten playlist with Bunny segments via /api/hls-proxy.
+ * On Vercel, direct m3u8 is often CF-blocked; caller should fall back to embedUrl.
+ */
+export async function fetchLzPlaylistBody(
+  slug: string,
+  id: string,
+): Promise<{ body: string; m3u8: string }> {
+  const stream = await fetchLzStream(slug, id)
+  const raw = await lzFetchM3u8(stream.m3u8)
+  return { body: rewriteLzPlaylist(raw), m3u8: stream.m3u8 }
 }

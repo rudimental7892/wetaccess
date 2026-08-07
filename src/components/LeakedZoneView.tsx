@@ -124,24 +124,53 @@ function HlsPlayer({ src, poster }: { src: string; poster?: string | null }) {
 function WatchPage({ slug, id }: { slug: string; id: string }) {
   const [hls, setHls] = useState<string | null>(null)
   const [poster, setPoster] = useState<string | null>(null)
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null)
+  const [mode, setMode] = useState<'hls' | 'embed'>('hls')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hlsFailed, setHlsFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     setHls(null)
+    setEmbedUrl(null)
+    setMode('hls')
+    setHlsFailed(false)
 
     void fetchLzStream(slug, id)
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return
-        setHls(data.hls)
         setPoster(data.poster)
+        setEmbedUrl(
+          data.embedUrl ??
+            `https://leakedzone.com/${encodeURIComponent(slug)}/video/${encodeURIComponent(id)}`,
+        )
+        const playlistUrl = data.playlist || data.hls
+        // Probe playlist — Vercel often cannot fetch LZ /m3u8 (CF 403).
+        try {
+          const probe = await fetch(playlistUrl)
+          const text = await probe.text()
+          if (probe.ok && text.includes('#EXTM3U')) {
+            setHls(playlistUrl)
+            setMode('hls')
+            return
+          }
+          setHlsFailed(true)
+          setMode('embed')
+        } catch {
+          setHlsFailed(true)
+          setMode('embed')
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return
         setError(e instanceof Error ? e.message : String(e))
+        setEmbedUrl(
+          `https://leakedzone.com/${encodeURIComponent(slug)}/video/${encodeURIComponent(id)}`,
+        )
+        setMode('embed')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -160,7 +189,9 @@ function WatchPage({ slug, id }: { slug: string; id: string }) {
           @{slug} · video #{id}
         </h1>
         <p className="fb-hero-line">
-          Guest JWPlayer decode → signed m3u8 → Bunny TS via `/api/hls-proxy`.
+          {mode === 'embed'
+            ? 'Host is Cloudflare-blocked for signed m3u8 — playing via embedded LeakedZone page. Bunny segments still proxy when HLS works (local/dev).'
+            : 'Guest JWPlayer decode → rewritten playlist → Bunny TS via `/api/hls-proxy`.'}
         </p>
         <div className="fb-chip-row">
           <a className="fb-chip" href={browseBackHash()}>
@@ -169,14 +200,61 @@ function WatchPage({ slug, id }: { slug: string; id: string }) {
           <a className="fb-chip" href={lzUserHash(slug)}>
             Profile
           </a>
+          {embedUrl ? (
+            <a
+              className="fb-chip"
+              href={embedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open on LZ
+            </a>
+          ) : null}
+          {hls && mode === 'embed' ? (
+            <button
+              type="button"
+              className="fb-chip"
+              onClick={() => setMode('hls')}
+            >
+              Try HLS
+            </button>
+          ) : null}
+          {mode === 'hls' && embedUrl ? (
+            <button
+              type="button"
+              className="fb-chip"
+              onClick={() => setMode('embed')}
+            >
+              Use embed
+            </button>
+          ) : null}
         </div>
       </section>
 
       {loading ? <p className="status">Resolving stream…</p> : null}
       {error ? <p className="status error">{error}</p> : null}
-      {hls ? (
+      {hlsFailed && mode === 'embed' ? (
+        <p className="status" style={{ opacity: 0.85 }}>
+          Direct HLS blocked from this server (Cloudflare on /m3u8). Embed
+          fallback active.
+        </p>
+      ) : null}
+
+      {!loading && mode === 'hls' && hls ? (
         <div className="fb-watch-player">
           <HlsPlayer src={hls} poster={poster} />
+        </div>
+      ) : null}
+
+      {!loading && mode === 'embed' && embedUrl ? (
+        <div className="fb-watch-player lz-embed-wrap">
+          <iframe
+            className="lz-embed-frame"
+            src={embedUrl}
+            title={`LeakedZone ${slug} video ${id}`}
+            allow="autoplay; fullscreen; encrypted-media"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
         </div>
       ) : null}
     </div>

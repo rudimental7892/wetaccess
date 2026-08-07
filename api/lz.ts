@@ -1,5 +1,6 @@
 import {
   fetchLzCreators,
+  fetchLzPlaylistBody,
   fetchLzProfile,
   fetchLzStream,
 } from './_lib/leakedzoneCore.js'
@@ -35,6 +36,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const op = q(req.query.op) ?? 'creators'
 
   try {
+    if (op === 'playlist') {
+      const slug = (q(req.query.slug) ?? '').trim()
+      const id = (q(req.query.id) ?? '').trim()
+      if (!slug || !id) {
+        res.status(400)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ error: 'missing slug or id' }))
+        return
+      }
+      const { body } = await fetchLzPlaylistBody(slug, id)
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
+      res.setHeader('Cache-Control', 'private, no-store')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.status(200).end(body)
+      return
+    }
+
     let body: unknown
 
     if (op === 'creators') {

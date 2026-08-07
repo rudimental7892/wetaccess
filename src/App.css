@@ -1369,6 +1369,25 @@
   color: #f5f3ff;
 }
 
+.lz-embed-wrap {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border, #2a2a32);
+}
+
+.lz-embed-frame {
+  display: block;
+  width: 100%;
+  min-height: min(70vh, 640px);
+  height: 70vh;
+  border: 0;
+  background: #000;
+}
+
 .gate-field {
   display: grid;
   gap: 6px;

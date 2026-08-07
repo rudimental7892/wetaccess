@@ -41,7 +41,10 @@ export type LzStreamResult = {
   id: string
   m3u8: string
   hls: string
+  playlist?: string
   poster: string | null
+  embedUrl?: string
+  source?: string
 }
 
 async function lzGet<T>(
