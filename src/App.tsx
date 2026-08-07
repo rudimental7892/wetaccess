@@ -341,6 +341,8 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
   const [page, setPage] = useState(initialBrowse.page)
   const [creators, setCreators] = useState<Creator[]>([])
   const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [searchNote, setSearchNote] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -378,6 +380,7 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
   const loadCreators = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setSearchNote(null)
 
     try {
       const data = await fetchCreators(page, CREATORS_PER_PAGE, searchQuery, {
@@ -385,19 +388,21 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
       })
       setCreators(data.items)
       setTotal(data.total)
+      setHasMore(Boolean(data.hasMore))
+      if (data.note) setSearchNote(data.note)
     } catch (loadError) {
       setCreators([])
       setTotal(0)
+      setHasMore(false)
       const msg =
         loadError instanceof Error
           ? loadError.message
           : twitterOnly
             ? 'Failed to load Twitter creators'
             : 'Failed to load creators'
-      // Browser .json() on wet3 HTML used to surface as "is not valid JSON"
       setError(
         /not valid JSON|Unexpected token|JSON\.parse/i.test(msg)
-          ? 'Creators feed changed (wet3 HTML). Hard-refresh or restart `npm run dev` to load the HTML parser fix.'
+          ? 'Creators feed changed (wet3 HTML). Hard-refresh or restart `npm run dev`.'
           : msg,
       )
     } finally {
@@ -435,10 +440,12 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
             : 'Find your next favorite creator'}
         </h1>
         <p className="hero-copy">
-          {total.toLocaleString()}{' '}
+          {hasMore
+            ? `Page ${page} · wet3 keeps loading more creators via infinite pages`
+            : `${total.toLocaleString()} on this result set`}
           {twitterOnly
-            ? 'Twitter-linked profiles. Same media library as Creators — open a card to browse their posts.'
-            : 'profiles to browse. Search by username or display name, then dive into their full media library.'}
+            ? '. Twitter-linked tab uses the same wet3 feed (wet3 no longer filters twitterOnly server-side).'
+            : '. Search scans usernames across pages (wet3 itself only filters in the browser).'}
         </p>
       </section>
 
@@ -465,6 +472,17 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
             </button>
           ) : null}
         </form>
+        {searchQuery && !loading ? (
+          <p className="status" style={{ marginTop: 10 }}>
+            Searching for “{searchQuery}” — wet3 no longer server-filters; we scan pages slowly
+            (max ~20) so CF doesn’t rate-limit.
+          </p>
+        ) : null}
+        {searchNote && !loading ? (
+          <p className="status" style={{ marginTop: 8, opacity: 0.8 }}>
+            {searchNote}
+          </p>
+        ) : null}
       </section>
 
       {error ? <p className="status error">{error}</p> : null}
@@ -508,6 +526,7 @@ function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean }) {
         <Pagination
           page={page}
           totalPages={totalPages}
+          hasMore={hasMore}
           onPrevious={() => goToCreatorsPage(page - 1)}
           onNext={() => goToCreatorsPage(page + 1)}
         />

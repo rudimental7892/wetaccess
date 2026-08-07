@@ -26,6 +26,10 @@ export type CreatorsResponse = {
   total: number
   page: number
   limit: number
+  /** Prefer this over total for Next button — wet3 is infinite HTMX */
+  hasMore?: boolean
+  mode?: 'page' | 'search-scan'
+  note?: string
 }
 
 export type DropItem = {
@@ -592,7 +596,7 @@ export async function fetchCreators(
     params.set('twitterOnly', 'true')
   }
 
-  // 1) Preferred: our server scrapes wet3 and returns real JSON.
+  // Preferred: server scrape (handles wet3 Alpine-only search + real hasMore).
   try {
     const catalog = await fetch(`/api/creators-catalog?${params}`, {
       headers: { Accept: 'application/json' },
@@ -602,30 +606,28 @@ export async function fetchCreators(
         error?: string
         detail?: string
       }
-      if (Array.isArray(data.items) && data.items.length > 0) {
+      if (Array.isArray(data.items) && !data.error) {
+        const hasMore =
+          typeof data.hasMore === 'boolean'
+            ? data.hasMore
+            : (data.total ?? 0) > page * limit
         return {
           items: data.items,
           total: data.total ?? data.items.length,
           page: data.page ?? page,
           limit: data.limit ?? limit,
-        }
-      }
-      // Empty page is valid (end of list) if total is set.
-      if (Array.isArray(data.items) && !data.error) {
-        return {
-          items: data.items,
-          total: data.total ?? 0,
-          page: data.page ?? page,
-          limit: data.limit ?? limit,
+          hasMore,
+          mode: data.mode,
+          note: data.note,
         }
       }
     }
   } catch {
-    // fall through to direct wet3-api scrape
+    // fall through
   }
 
-  // 2) Fallback: hit wet3 through the proxy and parse HTML in the browser.
-  const response = await fetch(`${API_BASE}/api/creators?${params}`, {
+  // Fallback: single wet3-api page (search will not work here — wet3 ignores it).
+  const response = await fetch(`${API_BASE}/api/creators?page=${page}&limit=${limit}`, {
     headers: {
       Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
       'HX-Request': 'true',
@@ -640,47 +642,52 @@ export async function fetchCreators(
     )
   }
 
-  const contentType = response.headers.get('content-type') ?? ''
   const raw = await response.text()
-
-  if (contentType.includes('application/json') || raw.trimStart().startsWith('{')) {
+  if (raw.trimStart().startsWith('{')) {
     try {
       const data = JSON.parse(raw) as CreatorsResponse
       if (Array.isArray(data.items)) {
-        return data
+        return { ...data, hasMore: data.hasMore ?? data.total > page * limit }
       }
     } catch {
-      // fall through to HTML
+      // fall through
     }
   }
 
-  const items = parseCreatorsHtml(raw)
-  if (items.length === 0) {
+  let items = parseCreatorsHtml(raw)
+  if (search?.trim()) {
+    const q = search.trim().toLowerCase()
+    items = items.filter(
+      (c) => c.u.toLowerCase().includes(q) || c.d.toLowerCase().includes(q),
+    )
+  }
+
+  if (items.length === 0 && !search?.trim()) {
     if (raw.includes('Security Check')) {
       throw new Error(
         'wet3 blocked creators (Turnstile). Restart `npm run dev` so the proxy injects wet3_user_id.',
       )
     }
-    if (raw.includes('404 Not Found')) {
-      throw new Error('Creators feed 404 from wet3')
-    }
-    // Help debug SPA fallback / empty proxy
     const snippet = raw.replace(/\s+/g, ' ').slice(0, 80)
-    throw new Error(
-      `No creators parsed from wet3 HTML (${raw.length} bytes). ${snippet}`,
-    )
+    throw new Error(`No creators parsed from wet3 HTML (${raw.length} bytes). ${snippet}`)
   }
 
-  const hasMore = creatorsHtmlHasMore(raw, page)
+  const hasMore = !search?.trim() && creatorsHtmlHasMore(raw, page)
+  const pageSize = Math.max(items.length, limit, 1)
   const total = hasMore
-    ? page * Math.max(items.length, limit) + 1
-    : (page - 1) * Math.max(limit, 1) + items.length
+    ? Math.max(page * pageSize + pageSize * 20, (page + 20) * limit)
+    : (page - 1) * pageSize + items.length
 
   return {
     items,
     total,
     page,
     limit,
+    hasMore,
+    mode: search?.trim() ? 'search-scan' : 'page',
+    note: search?.trim()
+      ? 'Fallback path only filtered this page — use /api/creators-catalog for multi-page search.'
+      : undefined,
   }
 }
 
