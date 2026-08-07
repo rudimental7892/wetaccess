@@ -3,7 +3,8 @@
  * Catalog + media pages are SSR Blade; streams come from JWPlayer f() deobfuscation.
  */
 
-import { LZ_CREATORS_BOOTSTRAP } from './lzCreatorsBootstrap'
+// Vercel ESM requires explicit .js extension for relative imports at runtime.
+import { LZ_CREATORS_BOOTSTRAP } from './lzCreatorsBootstrap.js'
 
 export const LZ_ORIGIN = 'https://leakedzone.com'
 export const LZ_CDN = 'https://image-cdn.leakedzone.com'
@@ -168,13 +169,22 @@ function mergeSetCookie(res: Response): void {
   stickyCookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
 }
 
+function abortSignal(ms: number): AbortSignal | undefined {
+  try {
+    return AbortSignal.timeout(ms)
+  } catch {
+    return undefined
+  }
+}
+
 async function directFetchHtml(url: string): Promise<string> {
-  // Warm homepage once for Laravel session cookies when cold.
+  // Warm homepage once for Laravel session cookies when cold (short timeout).
   if (!stickyCookie && !envCookie()) {
     try {
       const warm = await fetch(`${LZ_ORIGIN}/`, {
         headers: { ...BROWSER_HEADERS, Referer: `${LZ_ORIGIN}/` },
         redirect: 'follow',
+        signal: abortSignal(6_000),
       })
       mergeSetCookie(warm)
       await warm.text()
@@ -191,7 +201,11 @@ async function directFetchHtml(url: string): Promise<string> {
   const mergedCookie = [stickyCookie, envCookie()].filter(Boolean).join('; ')
   if (mergedCookie) headers.Cookie = mergedCookie
 
-  const res = await fetch(url, { headers, redirect: 'follow' })
+  const res = await fetch(url, {
+    headers,
+    redirect: 'follow',
+    signal: abortSignal(10_000),
+  })
   mergeSetCookie(res)
   const text = await res.text()
   if (isCloudflareChallenge(res.status, text)) {
@@ -233,12 +247,31 @@ async function relayFetchHtml(url: string): Promise<string> {
     }
   }
 
+  const withTimeout = async (
+    label: string,
+    ms: number,
+    fn: () => Promise<string | null>,
+  ): Promise<string | null> => {
+    try {
+      const result = await Promise.race([
+        fn(),
+        sleep(ms).then(() => {
+          throw new Error('timeout')
+        }),
+      ])
+      return result
+    } catch (e) {
+      errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`)
+      return null
+    }
+  }
+
   // 2) Jina reader (optional JINA_API_KEY / LZ_JINA_KEY for higher limits)
-  try {
+  const viaJina = await withTimeout('jina', 12_000, async () => {
     const headers: Record<string, string> = {
       Accept: 'text/html,application/xhtml+xml',
       'X-Return-Format': 'html',
-      'X-Timeout': '45',
+      'X-Timeout': '12',
       'User-Agent': UA,
     }
     const key =
@@ -250,56 +283,37 @@ async function relayFetchHtml(url: string): Promise<string> {
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers,
       redirect: 'follow',
+      signal: abortSignal(12_000),
     })
     const text = await res.text()
     if (res.ok && looksLikeLzHtml(text)) return text
-    errors.push(`jina HTTP ${res.status}`)
-  } catch (e) {
-    errors.push(`jina: ${e instanceof Error ? e.message : String(e)}`)
-  }
+    throw new Error(`HTTP ${res.status}`)
+  })
+  if (viaJina) return viaJina
 
   // 3) allorigins JSON wrapper
-  try {
+  const viaAo = await withTimeout('allorigins', 10_000, async () => {
     const res = await fetch(
       `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
       {
         headers: { Accept: 'application/json', 'User-Agent': UA },
         redirect: 'follow',
+        signal: abortSignal(10_000),
       },
     )
     const raw = await res.text()
-    if (res.ok) {
-      try {
-        const parsed = JSON.parse(raw) as { contents?: string }
-        const text = parsed.contents || ''
-        if (looksLikeLzHtml(text)) return text
-        errors.push('allorigins empty/non-LZ')
-      } catch {
-        if (looksLikeLzHtml(raw)) return raw
-        errors.push('allorigins bad JSON')
-      }
-    } else {
-      errors.push(`allorigins HTTP ${res.status}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    try {
+      const parsed = JSON.parse(raw) as { contents?: string }
+      const text = parsed.contents || ''
+      if (looksLikeLzHtml(text)) return text
+      throw new Error('empty/non-LZ')
+    } catch (e) {
+      if (looksLikeLzHtml(raw)) return raw
+      throw e instanceof Error ? e : new Error(String(e))
     }
-  } catch (e) {
-    errors.push(`allorigins: ${e instanceof Error ? e.message : String(e)}`)
-  }
-
-  // 4) allorigins raw
-  try {
-    const res = await fetch(
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      {
-        headers: { Accept: 'text/html,*/*', 'User-Agent': UA },
-        redirect: 'follow',
-      },
-    )
-    const text = await res.text()
-    if (res.ok && looksLikeLzHtml(text)) return text
-    errors.push(`allorigins-raw HTTP ${res.status}`)
-  } catch (e) {
-    errors.push(`allorigins-raw: ${e instanceof Error ? e.message : String(e)}`)
-  }
+  })
+  if (viaAo) return viaAo
 
   throw new Error(errors.join(' · ') || 'all relays failed')
 }
@@ -322,15 +336,13 @@ export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
 
   const errors: string[] = []
   const tryDirect = async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await directFetchHtml(url)
-      } catch (e) {
-        errors.push(e instanceof Error ? e.message : String(e))
-        if (attempt < 1) await sleep(250 * (attempt + 1))
-      }
+    // Single attempt — CF 403 on Vercel is deterministic; don't burn the budget.
+    try {
+      return await directFetchHtml(url)
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e))
+      return null
     }
-    return null
   }
   const tryRelay = async () => {
     try {
