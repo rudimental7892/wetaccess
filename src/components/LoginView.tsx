@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { DEMO_CREDENTIALS, validateCredentials } from '../lib/session'
+import { validateCredentials } from '../lib/session'
 
 type LoginViewProps = {
   onSuccess: () => void
@@ -37,7 +37,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder={DEMO_CREDENTIALS.username}
+            placeholder="Username"
           />
         </label>
 
@@ -48,7 +48,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
+            placeholder="Password"
           />
         </label>
 
@@ -57,11 +57,6 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         <button type="submit" className="gate-submit">
           Continue
         </button>
-
-        <p className="gate-hint">
-          Demo login: <code>{DEMO_CREDENTIALS.username}</code> /{' '}
-          <code>{DEMO_CREDENTIALS.password}</code>
-        </p>
       </form>
     </div>
   )

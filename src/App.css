@@ -124,6 +124,58 @@
   gap: 8px;
 }
 
+/* Hamburger — mobile only */
+.nav-hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.nav-hamburger:hover {
+  border-color: rgba(255, 0, 85, 0.35);
+  background: var(--accent-soft);
+}
+
+.nav-hamburger-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.nav-hamburger.open .nav-hamburger-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav-hamburger.open .nav-hamburger-bar:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-hamburger.open .nav-hamburger-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Mobile drawer */
+.nav-drawer-backdrop {
+  display: none;
+}
+
+.nav-drawer {
+  display: none;
+}
+
 .nav-pill {
   background: var(--bg-card);
   cursor: pointer;
@@ -922,24 +974,160 @@
 
   .app-nav-start {
     gap: 8px;
+    flex: 1;
+    min-width: 0;
   }
 
-  .app-nav-tabs {
-    gap: 2px;
-    padding: 3px;
+  /* Collapse desktop nav into hamburger on mobile */
+  .app-nav-tabs-desktop,
+  .app-nav-actions-desktop,
+  .breadcrumb-desktop {
+    display: none !important;
   }
 
-  .nav-tab {
-    padding: 8px 10px;
-    font-size: 11px;
+  .nav-hamburger {
+    display: inline-flex;
+  }
+
+  .nav-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .nav-drawer-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .nav-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 50;
+    width: min(320px, 88vw);
+    height: 100dvh;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(20px, env(safe-area-inset-bottom))
+      16px;
+    background: var(--bg-surface, #121216);
+    border-left: 1px solid var(--border);
+    box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
+    transform: translateX(105%);
+    transition: transform 0.22s ease;
+    gap: 8px;
+  }
+
+  .nav-drawer.open {
+    transform: translateX(0);
+  }
+
+  .nav-drawer-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .nav-drawer-head strong {
+    flex: 1;
+    font-size: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  .nav-drawer-close {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .nav-drawer-crumb {
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--bg-inset);
+    color: var(--text-muted);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-drawer-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nav-drawer-link {
+    display: block;
+    padding: 14px 14px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    transition: background 0.15s ease;
+  }
+
+  .nav-drawer-link:hover {
+    background: var(--bg-inset);
+  }
+
+  .nav-drawer-link.active {
+    background: linear-gradient(135deg, rgba(255, 0, 85, 0.95), #d40049);
+    color: #fff;
+  }
+
+  .nav-drawer-actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-drawer-btn {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .nav-drawer-btn:hover {
+    border-color: rgba(255, 0, 85, 0.35);
+    background: var(--accent-soft);
+  }
+
+  .nav-drawer-btn.danger {
+    color: #ff6b9d;
+    border-color: rgba(255, 0, 85, 0.25);
   }
 
   .app-brand-text {
     font-size: 18px;
-  }
-
-  .breadcrumb {
-    font-size: 13px;
   }
 
   .nav-pill,
