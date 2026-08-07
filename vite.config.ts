@@ -8,6 +8,7 @@ import { createDropsMiddleware } from './server/dropsApi'
 import { createDurationMiddleware } from './server/wet3Duration'
 import { createHlsProxyMiddleware } from './server/hlsProxy'
 import { createStreamRedirectMiddleware } from './server/streamProxy'
+import { createCreatorsMiddleware } from './server/creatorsApi'
 import { rewriteStreamLocation } from './server/hlsProxyCore'
 
 /**
@@ -53,6 +54,8 @@ function attachLocalApis() {
   return {
     name: 'wet3-local-apis',
     configureServer(server: { middlewares: { use: (fn: unknown) => void } }) {
+      // Creators catalog first — before any catch-all.
+      server.middlewares.use(createCreatorsMiddleware())
       server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())
@@ -62,6 +65,7 @@ function attachLocalApis() {
       server.middlewares.use(createHlsProxyMiddleware())
     },
     configurePreviewServer(server: { middlewares: { use: (fn: unknown) => void } }) {
+      server.middlewares.use(createCreatorsMiddleware())
       server.middlewares.use(createAcProxyMiddleware())
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())

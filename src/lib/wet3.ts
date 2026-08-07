@@ -524,27 +524,31 @@ export type FetchCreatorsOptions = {
 }
 
 /**
- * Wet3 switched `/api/creators` from JSON to HTMX HTML tiles (2026).
- * Parse creator cards: @username, avatar, "N uploads".
+ * Wet3 serves /api/creators as HTMX HTML tiles (not JSON).
+ * Prefer same-origin `/api/creators-catalog` (server scrape → JSON).
+ * Fallback: scrape HTML from `/wet3-api/api/creators` in the browser.
  */
 export function parseCreatorsHtml(html: string): Creator[] {
   const items: Creator[] = []
   const seen = new Set<string>()
-  const tileRe =
-    /href="\/user\/([^"]+)"[\s\S]{0,1200}?(?=href="\/user\/|hx-get=|$)/gi
+  // Split-based: wet3 inserts Alpine `x-show` attrs + newlines inside <a>.
+  const parts = html.split(/(?=href="\/user\/)/i)
 
-  let match: RegExpExecArray | null
-  while ((match = tileRe.exec(html)) !== null) {
-    const username = match[1]?.trim()
+  for (const part of parts) {
+    const um = part.match(/href="\/user\/([^"?#]+)"/i)
+    if (!um) continue
+    const username = decodeURIComponent(um[1].trim())
     if (!username || seen.has(username)) continue
+    if (username.includes('/') || username.includes(' ')) continue
     seen.add(username)
 
-    const block = match[0]
-    const img = block.match(/<img[^>]+src="([^"]+)"/i)?.[1] ?? '/favicon.svg'
+    const img =
+      part.match(/<img[^>]+src="([^"]+)"/i)?.[1] ??
+      part.match(/src="(\/media\/[^"]+|\/favicon[^"]*|https?:\/\/[^"]+)"/i)?.[1] ??
+      '/favicon.svg'
     const uploads =
-      block.match(/(\d[\d,]*)\s*uploads/i)?.[1]?.replace(/,/g, '') ?? '0'
-    const display =
-      block.match(/@([a-zA-Z0-9_.-]+)/)?.[1] ?? username
+      part.match(/(\d[\d,]*)\s*uploads/i)?.[1]?.replace(/,/g, '') ?? '0'
+    const display = part.match(/@([a-zA-Z0-9_.-]+)/)?.[1] ?? username
 
     items.push({
       u: username,
@@ -564,7 +568,8 @@ function creatorsHtmlHasMore(html: string, page: number): boolean {
   const next = page + 1
   return (
     html.includes(`page=${next}`) ||
-    new RegExp(`hx-get="[^"]*[?&]page=${next}(?:&|")`).test(html)
+    new RegExp(`hx-get="[^"]*[?&]page=${next}(?:&|")`).test(html) ||
+    new RegExp(`/api/creators\\?[^"]*page=${next}`).test(html)
   )
 }
 
@@ -587,6 +592,39 @@ export async function fetchCreators(
     params.set('twitterOnly', 'true')
   }
 
+  // 1) Preferred: our server scrapes wet3 and returns real JSON.
+  try {
+    const catalog = await fetch(`/api/creators-catalog?${params}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (catalog.ok) {
+      const data = (await catalog.json()) as CreatorsResponse & {
+        error?: string
+        detail?: string
+      }
+      if (Array.isArray(data.items) && data.items.length > 0) {
+        return {
+          items: data.items,
+          total: data.total ?? data.items.length,
+          page: data.page ?? page,
+          limit: data.limit ?? limit,
+        }
+      }
+      // Empty page is valid (end of list) if total is set.
+      if (Array.isArray(data.items) && !data.error) {
+        return {
+          items: data.items,
+          total: data.total ?? 0,
+          page: data.page ?? page,
+          limit: data.limit ?? limit,
+        }
+      }
+    }
+  } catch {
+    // fall through to direct wet3-api scrape
+  }
+
+  // 2) Fallback: hit wet3 through the proxy and parse HTML in the browser.
   const response = await fetch(`${API_BASE}/api/creators?${params}`, {
     headers: {
       Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
@@ -605,7 +643,6 @@ export async function fetchCreators(
   const contentType = response.headers.get('content-type') ?? ''
   const raw = await response.text()
 
-  // Legacy JSON (if wet3 reverts) or HTML tiles.
   if (contentType.includes('application/json') || raw.trimStart().startsWith('{')) {
     try {
       const data = JSON.parse(raw) as CreatorsResponse
@@ -618,15 +655,20 @@ export async function fetchCreators(
   }
 
   const items = parseCreatorsHtml(raw)
-  if (items.length === 0 && raw.trimStart().startsWith('<')) {
-    // Empty page is ok; only throw when body looks like a hard error page.
-    if (raw.includes('404 Not Found') || raw.includes('Security Check')) {
+  if (items.length === 0) {
+    if (raw.includes('Security Check')) {
       throw new Error(
-        options.twitterOnly
-          ? 'Twitter creators HTML empty or blocked'
-          : 'Creators HTML empty or blocked',
+        'wet3 blocked creators (Turnstile). Restart `npm run dev` so the proxy injects wet3_user_id.',
       )
     }
+    if (raw.includes('404 Not Found')) {
+      throw new Error('Creators feed 404 from wet3')
+    }
+    // Help debug SPA fallback / empty proxy
+    const snippet = raw.replace(/\s+/g, ' ').slice(0, 80)
+    throw new Error(
+      `No creators parsed from wet3 HTML (${raw.length} bytes). ${snippet}`,
+    )
   }
 
   const hasMore = creatorsHtmlHasMore(raw, page)
