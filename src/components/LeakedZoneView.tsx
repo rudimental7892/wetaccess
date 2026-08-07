@@ -274,12 +274,14 @@ function ProfilePage({
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [useEmbed, setUseEmbed] = useState(false)
 
   // Reset when slug/tab change
   useEffect(() => {
     setPage(1)
     setItems([])
     setData(null)
+    setUseEmbed(false)
   }, [slug, tab])
 
   const load = useCallback(
@@ -291,6 +293,7 @@ function ProfilePage({
         const res = await fetchLzProfile({ slug, tab, page: nextPage })
         setData(res)
         setPage(res.page)
+        setUseEmbed(false)
         setItems((prev) => {
           if (!append) return res.items
           const seen = new Set(prev.map((i) => i.id))
@@ -300,6 +303,7 @@ function ProfilePage({
         if (!append) {
           setItems([])
           setData(null)
+          setUseEmbed(true)
         }
         setError(e instanceof Error ? e.message : String(e))
       } finally {
@@ -376,8 +380,28 @@ function ProfilePage({
         </div>
       </section>
 
-      {error ? <p className="status error">{error}</p> : null}
+      {error ? (
+        <p className="status error">
+          {error}
+          {useEmbed
+            ? ' — live scrape blocked; embedded profile below (or open on LZ).'
+            : ''}
+        </p>
+      ) : null}
       {loading ? <p className="status">Loading media…</p> : null}
+
+      {!loading && useEmbed ? (
+        <div className="fb-watch-player lz-embed-wrap">
+          <iframe
+            className="lz-embed-frame"
+            src={`https://leakedzone.com/${encodeURIComponent(slug)}${
+              tab === 'photo' ? '/photo' : '/video'
+            }`}
+            title={`LeakedZone @${slug}`}
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+      ) : null}
 
       {!loading && items.length > 0 ? (
         <section className="media-section panel">
@@ -471,15 +495,18 @@ function CreatorsBrowse() {
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setNote(null)
     try {
       const data = await fetchLzCreators({ page, networks, sort })
       setItems(data.items)
       setLastPage(data.lastPage)
       setHasMore(data.hasMore)
+      if (data.note) setNote(data.note)
     } catch (e: unknown) {
       setItems([])
       setError(e instanceof Error ? e.message : String(e))
@@ -612,9 +639,14 @@ function CreatorsBrowse() {
       </section>
 
       {error ? <p className="status error">{error}</p> : null}
+      {note && !error ? (
+        <p className="status" style={{ opacity: 0.85 }}>
+          {note}
+        </p>
+      ) : null}
       {loading ? <p className="status">Loading creators…</p> : null}
 
-      {!loading && !error ? (
+      {!loading && items.length > 0 ? (
         <section className="creators-grid">
           {filtered.map((c) => (
             <a
@@ -639,11 +671,11 @@ function CreatorsBrowse() {
         </section>
       ) : null}
 
-      {!loading && !error && filtered.length === 0 ? (
+      {!loading && items.length > 0 && filtered.length === 0 ? (
         <p className="empty">No creators on this page match the filter.</p>
       ) : null}
 
-      {!loading && !error && items.length > 0 ? (
+      {!loading && items.length > 0 ? (
         <div className="fb-chip-row" style={{ marginTop: 20, justifyContent: 'center' }}>
           <button
             type="button"

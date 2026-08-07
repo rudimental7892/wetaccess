@@ -20,6 +20,7 @@ export type LzCreatorsPage = {
   lastPage: number
   hasMore: boolean
   totalEstimate: number
+  note?: string
 }
 
 export type LzProfilePage = {

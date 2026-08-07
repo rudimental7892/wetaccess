@@ -3,6 +3,8 @@
  * Catalog + media pages are SSR Blade; streams come from JWPlayer f() deobfuscation.
  */
 
+import { LZ_CREATORS_BOOTSTRAP } from './lzCreatorsBootstrap'
+
 export const LZ_ORIGIN = 'https://leakedzone.com'
 export const LZ_CDN = 'https://image-cdn.leakedzone.com'
 
@@ -205,28 +207,101 @@ async function directFetchHtml(url: string): Promise<string> {
 }
 
 /**
- * Jina reader returns full origin HTML with X-Return-Format: html.
- * Bypasses Cloudflare blocks on Vercel/datacenter IPs (catalog pages).
+ * Free/optional HTML relays when Cloudflare blocks datacenter IPs (Vercel).
+ * Order: custom proxy → jina (optional key) → allorigins.
  */
-async function jinaFetchHtml(url: string): Promise<string> {
-  const relay = `https://r.jina.ai/${url}`
-  const res = await fetch(relay, {
-    headers: {
+async function relayFetchHtml(url: string): Promise<string> {
+  const errors: string[] = []
+
+  // 1) Custom proxy: LZ_FETCH_PROXY="https://proxy.example/?url=%s"
+  const custom =
+    typeof process !== 'undefined' ? process.env.LZ_FETCH_PROXY || '' : ''
+  if (custom.includes('%s') || custom.includes('{url}')) {
+    try {
+      const target = custom.includes('%s')
+        ? custom.replace('%s', encodeURIComponent(url))
+        : custom.replace('{url}', encodeURIComponent(url))
+      const res = await fetch(target, {
+        headers: { 'User-Agent': UA, Accept: 'text/html,*/*' },
+        redirect: 'follow',
+      })
+      const text = await res.text()
+      if (res.ok && looksLikeLzHtml(text)) return text
+      errors.push(`custom-proxy HTTP ${res.status}`)
+    } catch (e) {
+      errors.push(`custom-proxy: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // 2) Jina reader (optional JINA_API_KEY / LZ_JINA_KEY for higher limits)
+  try {
+    const headers: Record<string, string> = {
       Accept: 'text/html,application/xhtml+xml',
       'X-Return-Format': 'html',
       'X-Timeout': '45',
       'User-Agent': UA,
-    },
-    redirect: 'follow',
-  })
-  const text = await res.text()
-  if (!res.ok) {
-    throw new Error(`HTML relay HTTP ${res.status}`)
+    }
+    const key =
+      typeof process !== 'undefined'
+        ? process.env.JINA_API_KEY || process.env.LZ_JINA_KEY || ''
+        : ''
+    if (key) headers.Authorization = `Bearer ${key}`
+
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers,
+      redirect: 'follow',
+    })
+    const text = await res.text()
+    if (res.ok && looksLikeLzHtml(text)) return text
+    errors.push(`jina HTTP ${res.status}`)
+  } catch (e) {
+    errors.push(`jina: ${e instanceof Error ? e.message : String(e)}`)
   }
-  if (!looksLikeLzHtml(text)) {
-    throw new Error('HTML relay returned non-LZ content')
+
+  // 3) allorigins JSON wrapper
+  try {
+    const res = await fetch(
+      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+      {
+        headers: { Accept: 'application/json', 'User-Agent': UA },
+        redirect: 'follow',
+      },
+    )
+    const raw = await res.text()
+    if (res.ok) {
+      try {
+        const parsed = JSON.parse(raw) as { contents?: string }
+        const text = parsed.contents || ''
+        if (looksLikeLzHtml(text)) return text
+        errors.push('allorigins empty/non-LZ')
+      } catch {
+        if (looksLikeLzHtml(raw)) return raw
+        errors.push('allorigins bad JSON')
+      }
+    } else {
+      errors.push(`allorigins HTTP ${res.status}`)
+    }
+  } catch (e) {
+    errors.push(`allorigins: ${e instanceof Error ? e.message : String(e)}`)
   }
-  return text
+
+  // 4) allorigins raw
+  try {
+    const res = await fetch(
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      {
+        headers: { Accept: 'text/html,*/*', 'User-Agent': UA },
+        redirect: 'follow',
+      },
+    )
+    const text = await res.text()
+    if (res.ok && looksLikeLzHtml(text)) return text
+    errors.push(`allorigins-raw HTTP ${res.status}`)
+  } catch (e) {
+    errors.push(`allorigins-raw: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  throw new Error(errors.join(' · ') || 'all relays failed')
 }
 
 export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
@@ -258,15 +333,12 @@ export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
     return null
   }
   const tryRelay = async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await jinaFetchHtml(url)
-      } catch (e) {
-        errors.push(`relay: ${e instanceof Error ? e.message : String(e)}`)
-        if (attempt < 1) await sleep(400 * (attempt + 1))
-      }
+    try {
+      return await relayFetchHtml(url)
+    } catch (e) {
+      errors.push(`relay: ${e instanceof Error ? e.message : String(e)}`)
+      return null
     }
-    return null
   }
 
   if (preferRelay) {
@@ -284,6 +356,42 @@ export async function lzFetchHtml(pathOrUrl: string): Promise<string> {
   throw new Error(
     `LeakedZone blocked this host (Cloudflare). ${errors.join(' · ')}`,
   )
+}
+
+type LzBootstrapFile = {
+  lastPage?: number
+  pages?: Record<string, LzCreator[]>
+  items?: LzCreator[]
+  generatedAt?: string
+}
+
+function bootstrapFromData(
+  data: LzBootstrapFile,
+  page: number,
+): LzCreatorsPage | null {
+  const items =
+    data.pages?.[String(page)] ||
+    (page === 1 ? data.items || data.pages?.['1'] : null) ||
+    null
+  if (!items?.length) return null
+  const cachedPages = data.pages ? Object.keys(data.pages).length : 1
+  const lastPage = data.lastPage ?? page
+  // Only claim hasMore within cached pages when live is down
+  const hasMore = Boolean(data.pages?.[String(page + 1)])
+  return {
+    items,
+    page,
+    lastPage: Math.max(lastPage, cachedPages),
+    hasMore,
+    totalEstimate: lastPage * Math.max(items.length, 1),
+  }
+}
+
+/** Static fallback when every live fetch path is CF-blocked (Vercel). */
+export async function loadLzCreatorsBootstrap(
+  page: number,
+): Promise<LzCreatorsPage | null> {
+  return bootstrapFromData(LZ_CREATORS_BOOTSTRAP as unknown as LzBootstrapFile, page)
 }
 
 /** Fetch raw m3u8 body (no HTML relay — jina gets Unauthorized on /m3u8). */
@@ -540,14 +648,31 @@ export async function fetchLzCreators(opts: {
   page?: number
   networks?: string
   sort?: string
-}): Promise<LzCreatorsPage> {
+}): Promise<LzCreatorsPage & { note?: string }> {
   const page = Math.max(1, opts.page ?? 1)
   const params = new URLSearchParams()
   params.set('page', String(page))
   if (opts.networks) params.set('Networks', opts.networks)
   if (opts.sort) params.set('sort', opts.sort)
-  const html = await lzFetchHtml(`/creators?${params.toString()}`)
-  return parseCreatorsHtml(html, page)
+
+  try {
+    const html = await lzFetchHtml(`/creators?${params.toString()}`)
+    return parseCreatorsHtml(html, page)
+  } catch (liveErr) {
+    // Unfiltered catalog only — filters need live HTML
+    if (!opts.networks && !opts.sort) {
+      const cached = await loadLzCreatorsBootstrap(page)
+      if (cached) {
+        return {
+          ...cached,
+          note: `Live scrape blocked (Cloudflare). Showing cached page ${page}. ${
+            liveErr instanceof Error ? liveErr.message : String(liveErr)
+          }`,
+        }
+      }
+    }
+    throw liveErr
+  }
 }
 
 export async function fetchLzProfile(opts: {
