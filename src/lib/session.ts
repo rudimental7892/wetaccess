@@ -7,10 +7,10 @@ export type SessionState = {
 
 const SESSION_KEY = 'wetaccess:session'
 
-/** Demo gate for the multi-site shell. Change as needed. */
+/** Gate for the multi-site shell. */
 export const DEMO_CREDENTIALS = {
-  username: 'access',
-  password: 'access',
+  username: 'admin',
+  password: 'SuperAccess@Pass2026',
 } as const
 
 const DEFAULT_SESSION: SessionState = { loggedIn: false, site: null }
@@ -45,7 +45,7 @@ export function clearSession(): void {
 
 export function validateCredentials(username: string, password: string): boolean {
   return (
-    username.trim().toLowerCase() === DEMO_CREDENTIALS.username &&
+    username.trim().toLowerCase() === DEMO_CREDENTIALS.username.toLowerCase() &&
     password === DEMO_CREDENTIALS.password
   )
 }

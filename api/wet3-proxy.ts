@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { obtainWet3StreamToken, streamV2UrlWithToken } from './_lib/wet3StreamToken'
+// Vercel ESM requires explicit .js extension for relative imports at runtime.
+import { obtainWet3StreamToken, streamV2UrlWithToken } from './_lib/wet3StreamToken.js'
 
 type VercelRequest = {
   method?: string

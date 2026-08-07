@@ -1,4 +1,5 @@
-import { fetchCreatorsFromWet3 } from './_lib/creatorsCore'
+// Vercel ESM requires explicit .js extension for relative imports at runtime.
+import { fetchCreatorsFromWet3 } from './_lib/creatorsCore.js'
 
 type VercelRequest = {
   method?: string
