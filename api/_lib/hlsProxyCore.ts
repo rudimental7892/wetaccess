@@ -7,8 +7,6 @@ const ALLOWED_HOST_SUFFIXES = [
   '.allaccessfans.co',
   '.wasabisys.com',
   '.contabostorage.com',
-  '.wet3.click',
-  '.wet3.site',
 ] as const
 
 const ALLOWED_HOSTS = new Set([
