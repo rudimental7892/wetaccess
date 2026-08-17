@@ -670,9 +670,9 @@ export async function fetchCreators(
   }
 
   if (items.length === 0 && !search?.trim()) {
-    if (raw.includes('Security Check')) {
+    if (raw.includes('Security Check') || raw.includes('Turnstile') || raw.includes('cf-challenge')) {
       throw new Error(
-        'wet3 blocked creators (Turnstile). Restart `npm run dev` so the proxy injects wet3_user_id.',
+        'wet3 blocked by Cloudflare Turnstile (403). The wet3 catalog needs a browser challenge — switch to LeakedZone / FanBusy via the site picker (top nav) where videos still play, or open https://wet3.click in a browser, pass Turnstile, then retry.',
       )
     }
     const snippet = raw.replace(/\s+/g, ' ').slice(0, 80)
