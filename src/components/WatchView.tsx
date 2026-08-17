@@ -136,6 +136,9 @@ async function probeWet3Broker(
 
 function explainUpstreamFailure(status: number, head: string, url: string): string {
   const trimmed = head.trim()
+  if (/Turnstile|Security Check|cf-challenge|__CF\$cv\$params/i.test(trimmed)) {
+    return 'Wet3 is blocking with Cloudflare Turnstile (403). The catalog/stream needs a browser challenge — try a LeakedZone or FanBusy video from the site picker (those still play), or open wet3.click in a browser, pass Turnstile, then retry.'
+  }
   if (/^Proxy Error\b/i.test(trimmed) || /wet3 upstream proxy error/i.test(trimmed)) {
     return AAF_BROKER_DOWN
   }

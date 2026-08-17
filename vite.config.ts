@@ -36,6 +36,17 @@ function createWet3Proxy(): ProxyOptions {
         // wet3 403s stream-v2 when Referer is localhost/wetaccess; Bunny needs wet3 too.
         proxyReq.setHeader('referer', `${WET3_ORIGIN}/`)
         proxyReq.setHeader('origin', WET3_ORIGIN)
+        // Extra browser headers to reduce Turnstile challenge (wet3 now 403 without them)
+        proxyReq.setHeader(
+          'user-agent',
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        )
+        proxyReq.setHeader('accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8')
+        proxyReq.setHeader('accept-language', 'en-US,en;q=0.9')
+        proxyReq.setHeader('sec-fetch-site', 'same-origin')
+        proxyReq.setHeader('sec-fetch-mode', 'navigate')
+        proxyReq.setHeader('sec-fetch-dest', 'document')
+        proxyReq.setHeader('upgrade-insecure-requests', '1')
       })
       proxy.on('proxyRes', (proxyRes) => {
         const location = proxyRes.headers.location
