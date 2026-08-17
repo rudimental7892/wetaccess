@@ -29,6 +29,10 @@ function isAllowedHlsUrl(raw: string): boolean {
       host === 'media.allaccessfans.co' ||
       host === 'wet3.click' ||
       host === 'www.wet3.click' ||
+      host === 'wet3.site' ||
+      host === 'www.wet3.site' ||
+      host.endsWith('.wet3.click') ||
+      host.endsWith('.wet3.site') ||
       host === 'leakedzone.com' ||
       host === 'www.leakedzone.com'
     )
@@ -95,10 +99,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const raw = req.query.url
   const targetUrl = Array.isArray(raw) ? raw[0] : raw
 
-  if (!targetUrl) {
+  if (!targetUrl || targetUrl.trim() === '') {
     res.status(400)
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'missing url' }))
+    res.end(JSON.stringify({ error: 'missing url', detail: 'hls-proxy url= was empty (open proxied stream had no playUrl)' }))
     return
   }
 
@@ -115,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!isAllowedHlsUrl(decoded)) {
     res.status(400)
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'url host not allowed' }))
+    res.end(JSON.stringify({ error: 'url host not allowed', detail: `host not allowlisted: ${decoded}` }))
     return
   }
 

@@ -12,6 +12,8 @@ const ALLOWED_HOST_SUFFIXES = [
 const ALLOWED_HOSTS = new Set([
   'wet3.click',
   'www.wet3.click',
+  'wet3.site',
+  'www.wet3.site',
   'media.allaccessfans.co',
   's3.eu-west-1.wasabisys.com',
   'leakedzone.com',

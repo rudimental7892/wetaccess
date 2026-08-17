@@ -174,6 +174,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // AAF stills / Bunny nested in proxy-m3u8 — never let the browser fetch CDN raw.
   if (path.includes('api/stream-v2/proxy')) {
     const nested = incomingUrl.searchParams.get('url')
+    // Empty url param → do not 302 to hls-proxy with empty target (was 400 missing url)
+    if (nested != null && nested.trim() === '') {
+      res.status(502)
+      res.setHeader('content-type', 'application/json')
+      res.setHeader('cache-control', 'private, no-store')
+      res.end(JSON.stringify({ error: 'missing target URL', detail: 'wet3 proxy redirect had empty url= parameter', path }))
+      return
+    }
     const still = nested ? aafStillUrlFromFakeHls(nested) : null
     if (still) {
       res.status(302)
@@ -195,6 +203,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch {
         // fall through to wet3
       }
+    }
+    // Missing url param entirely — let main proxy handle (will 502, not 302 empty)
+    if (!nested) {
+      // fall through to normal wet3 fetch — do not redirect to empty hls-proxy
     }
   }
 

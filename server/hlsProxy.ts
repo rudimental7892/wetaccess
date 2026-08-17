@@ -12,10 +12,15 @@ export function createHlsProxyMiddleware(): Connect.NextHandleFunction {
     const parsed = new URL(url, 'http://localhost')
     const targetUrl = parsed.searchParams.get('url')
 
-    if (!targetUrl || !isAllowedHlsUrl(targetUrl)) {
+    if (!targetUrl || targetUrl.trim() === '' || !isAllowedHlsUrl(targetUrl)) {
       res.statusCode = 400
       res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: 'missing or disallowed url' }))
+      res.end(
+        JSON.stringify({
+          error: 'missing or disallowed url',
+          detail: !targetUrl || targetUrl.trim() === '' ? 'hls-proxy url= was empty (open proxied stream had no playUrl)' : `host not allowlisted: ${targetUrl}`,
+        }),
+      )
       return
     }
 

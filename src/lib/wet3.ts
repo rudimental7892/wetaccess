@@ -115,7 +115,14 @@ export function ensureProxiedPlayUrl(raw: string): string {
       return `/api/hls-proxy?url=${encodeURIComponent(url.href)}`
     }
 
-    if (host === 'wet3.click' || host === 'www.wet3.click') {
+    if (
+      host === 'wet3.click' ||
+      host === 'www.wet3.click' ||
+      host === 'wet3.site' ||
+      host === 'www.wet3.site' ||
+      host.endsWith('.wet3.click') ||
+      host.endsWith('.wet3.site')
+    ) {
       return `${API_BASE}${url.pathname}${url.search}`
     }
 

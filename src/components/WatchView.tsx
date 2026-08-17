@@ -79,7 +79,14 @@ async function preflightStream(
     if (head.trimStart().startsWith('#EXTM3U') || contentType.includes('mpegurl')) {
       // Prefer stable proxy URL advertised by stream middleware when present.
       const playHeader = response.headers.get('X-Wetaccess-Play-Url')
-      const playUrl = ensureProxiedPlayUrl(playHeader || url)
+      const playUrl =
+        playHeader && playHeader.trim()
+          ? ensureProxiedPlayUrl(playHeader)
+          : ensureProxiedPlayUrl(url)
+      // Guard empty header that would otherwise become "" → 400 missing url
+      if (!playUrl || playUrl.trim() === '' || playUrl.includes('url=&') || playUrl.endsWith('?url=')) {
+        return { ok: true, playUrl: ensureProxiedPlayUrl(url) }
+      }
       return { ok: true, playUrl }
     }
 
@@ -109,9 +116,16 @@ async function probeWet3Broker(
     })
     if (response.ok && head.trimStart().startsWith('#EXTM3U')) {
       const playHeader = response.headers.get('X-Wetaccess-Play-Url')
+      const playUrl =
+        playHeader && playHeader.trim()
+          ? ensureProxiedPlayUrl(playHeader)
+          : ensureProxiedPlayUrl(proxyPath)
+      if (!playUrl || playUrl.trim() === '' || playUrl.includes('url=&') || playUrl.endsWith('?url=')) {
+        return { ok: true, playUrl: ensureProxiedPlayUrl(proxyPath) }
+      }
       return {
         ok: true,
-        playUrl: ensureProxiedPlayUrl(playHeader || proxyPath),
+        playUrl,
       }
     }
     return { ok: false, message: explainUpstreamFailure(response.status, head, proxyPath) }
