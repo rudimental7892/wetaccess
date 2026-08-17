@@ -7,6 +7,8 @@ const ALLOWED_HOST_SUFFIXES = [
   '.allaccessfans.co',
   '.wasabisys.com',
   '.contabostorage.com',
+  '.wet3.click',
+  '.wet3.site',
 ] as const
 
 const ALLOWED_HOSTS = new Set([
@@ -137,8 +139,17 @@ export function rewriteStreamLocation(location: string): string {
     ? location
     : new URL(location, WET3_ORIGIN).href
 
+  let isWet3Host = false
   try {
     const parsed = new URL(absolute)
+    // Allow any wet3 subdomain (fyolot.wet3.click etc. from wet3.site rotation)
+    isWet3Host =
+      parsed.hostname === 'wet3.click' ||
+      parsed.hostname === 'www.wet3.click' ||
+      parsed.hostname === 'wet3.site' ||
+      parsed.hostname === 'www.wet3.site' ||
+      parsed.hostname.endsWith('.wet3.click') ||
+      parsed.hostname.endsWith('.wet3.site')
 
     if (parsed.hostname.endsWith('.b-cdn.net')) {
       return hlsProxyPath(absolute)
@@ -155,6 +166,11 @@ export function rewriteStreamLocation(location: string): string {
         // Expired / unsalvageable AAF URL — keep a wet3-api hop so the player
         // can read wet3's "Proxy Error" / our clearer middleware JSON.
       }
+      if (isWet3Host) {
+        // Handles fyolot.wet3.click etc.
+        const withoutOrigin = absolute.replace(/^https:\/\/[^/]+/, '')
+        return `/wet3-api${withoutOrigin}`
+      }
       if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
         return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
       }
@@ -166,8 +182,9 @@ export function rewriteStreamLocation(location: string): string {
     // fall through
   }
 
-  if (absolute.startsWith(`${WET3_ORIGIN}/`)) {
-    return `/wet3-api/${absolute.slice(`${WET3_ORIGIN}/`.length)}`
+  if (isWet3Host || absolute.startsWith(`${WET3_ORIGIN}/`)) {
+    const withoutOrigin = absolute.replace(/^https:\/\/[^/]+/, '')
+    return `/wet3-api${withoutOrigin.startsWith('/') ? withoutOrigin : `/${withoutOrigin}`}`
   }
 
   if (isAllowedHlsUrl(absolute) && absolute.includes('.b-cdn.net')) {
