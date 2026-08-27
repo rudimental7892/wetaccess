@@ -1007,10 +1007,13 @@ function userMediaHtmlHasMore(html: string, page: number): boolean {
   )
 }
 
-export async function fetchUserMedia(username: string): Promise<MediaItem[]> {
+export async function fetchUserMedia(
+  username: string,
+  onPage?: (items: MediaItem[]) => void,
+): Promise<MediaItem[]> {
   // Primary: paginated HTMX user-media HTML.
   try {
-    const fromTiles = await fetchUserMediaFromUserMediaApi(username)
+    const fromTiles = await fetchUserMediaFromUserMediaApi(username, onPage)
     if (fromTiles.length > 0) {
       return fromTiles
     }
@@ -1099,7 +1102,10 @@ function mapProfileApiRows(
 /**
  * HTMX `/api/user-media?username=&page=` — primary catalog source on current wet3.
  */
-async function fetchUserMediaFromUserMediaApi(username: string): Promise<MediaItem[]> {
+async function fetchUserMediaFromUserMediaApi(
+  username: string,
+  onPage?: (items: MediaItem[]) => void,
+): Promise<MediaItem[]> {
   const slug = username.toLowerCase()
   const byId = new Map<string, MediaItem>()
   const maxPages = 100
@@ -1126,6 +1132,10 @@ async function fetchUserMediaFromUserMediaApi(username: string): Promise<MediaIt
     const rows = parseUserMediaHtml(html, slug)
     for (const item of rows) {
       byId.set(item.id, item)
+    }
+
+    if (onPage) {
+      onPage(sortMediaNewestFirst([...byId.values()]))
     }
 
     if (rows.length === 0 || !userMediaHtmlHasMore(html, page)) {

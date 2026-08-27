@@ -170,13 +170,21 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
 
     void (async () => {
       try {
+        // Fast path: resolve Bunny CDN playlist directly from wet3's image API.
+        // stream-v2 is dead (always 400) so skip it to avoid wasted round-trips.
+        const playlistUrl = await resolveBunnyPlaylist(mediaId)
+        if (playlistUrl) {
+          await serveProxiedLocation(res, playlistUrl)
+          return
+        }
+
+        // Fallback: try stream-v2 in case wet3 restores it or for non-Bunny media.
         let targetUrl = existingSt
           ? streamV2UrlWithToken(mediaId, existingSt)
           : `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
 
         let upstream = await fetchWet3Stream(targetUrl)
 
-        // Wet3 gates streams behind an ad token: 402 or 400 "Missing url" without one.
         if (!upstream.headers.get('location') && (upstream.status === 402 || upstream.status === 400)) {
           const st = await obtainWet3StreamToken(mediaId, guestCookie)
           if (st) {
@@ -189,16 +197,6 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
         if (location) {
           await serveProxiedLocation(res, location)
           return
-        }
-
-        // stream-v2 is dead (400 "Missing url"). Derive the HLS playlist from
-        // wet3's image API which redirects to Bunny CDN preview.webp.
-        if (upstream.status === 400) {
-          const playlistUrl = await resolveBunnyPlaylist(mediaId)
-          if (playlistUrl) {
-            await serveProxiedLocation(res, playlistUrl)
-            return
-          }
         }
 
         res.statusCode = upstream.status

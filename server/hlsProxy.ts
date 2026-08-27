@@ -30,7 +30,8 @@ export function createHlsProxyMiddleware(): Connect.NextHandleFunction {
         if (upstream.contentType) {
           res.setHeader('Content-Type', upstream.contentType)
         }
-        res.setHeader('Cache-Control', 'private, no-store')
+        const isImage = upstream.contentType?.startsWith('image/') ?? false
+        res.setHeader('Cache-Control', isImage ? 'public, max-age=1800' : 'private, no-store')
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.end(upstream.body)
       })

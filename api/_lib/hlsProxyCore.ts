@@ -262,6 +262,36 @@ export function fetchHeadersForTarget(
   return wet3FetchHeaders(extra)
 }
 
+// ---------------------------------------------------------------------------
+// In-memory LRU cache for proxied image thumbnails
+// ---------------------------------------------------------------------------
+type CacheEntry = {
+  status: number
+  contentType: string | null
+  body: Buffer
+  finalUrl: string
+  cachedAt: number
+}
+
+const IMAGE_CACHE_MAX = 500
+const IMAGE_CACHE_TTL_MS = 30 * 60 * 1000 // 30 minutes
+const imageCache = new Map<string, CacheEntry>()
+
+function isImageContentType(ct: string | null): boolean {
+  if (!ct) return false
+  return ct.startsWith('image/')
+}
+
+function evictStaleEntries() {
+  if (imageCache.size <= IMAGE_CACHE_MAX) return
+  const now = Date.now()
+  for (const [key, entry] of imageCache) {
+    if (now - entry.cachedAt > IMAGE_CACHE_TTL_MS || imageCache.size > IMAGE_CACHE_MAX) {
+      imageCache.delete(key)
+    }
+  }
+}
+
 export async function fetchProxiedMedia(targetUrl: string): Promise<{
   status: number
   contentType: string | null
@@ -275,6 +305,12 @@ export async function fetchProxiedMedia(targetUrl: string): Promise<{
       body: Buffer.from(JSON.stringify({ error: 'url host not allowed' })),
       finalUrl: targetUrl,
     }
+  }
+
+  // Serve from cache for image thumbnails (preview.webp etc.)
+  const cached = imageCache.get(targetUrl)
+  if (cached && Date.now() - cached.cachedAt < IMAGE_CACHE_TTL_MS) {
+    return { status: cached.status, contentType: cached.contentType, body: cached.body, finalUrl: cached.finalUrl }
   }
 
   let lastError: unknown
@@ -312,12 +348,15 @@ export async function fetchProxiedMedia(targetUrl: string): Promise<{
         }
       }
 
-      return {
-        status: response.status,
-        contentType,
-        body: buffer,
-        finalUrl,
+      const result = { status: response.status, contentType, body: buffer, finalUrl }
+
+      // Cache successful image responses (thumbnails)
+      if (response.status === 200 && isImageContentType(contentType)) {
+        imageCache.set(targetUrl, { ...result, cachedAt: Date.now() })
+        evictStaleEntries()
       }
+
+      return result
     } catch (error) {
       lastError = error
       if (attempt < maxAttempts - 1) {

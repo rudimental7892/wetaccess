@@ -139,6 +139,72 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+// ---------------------------------------------------------------------------
+// In-memory creator catalog cache (5-hour TTL, background refresh)
+// ---------------------------------------------------------------------------
+type CatalogCache = {
+  /** All creators scraped across all origin pages */
+  all: Creator[]
+  /** When the cache was last refreshed (ms) */
+  fetchedAt: number
+  /** Whether a background refresh is currently running */
+  refreshing: boolean
+}
+
+const CATALOG_TTL_MS = 5 * 60 * 60 * 1000 // 5 hours
+let catalogCache: CatalogCache | null = null
+
+async function scrapeFullCatalog(): Promise<Creator[]> {
+  const all: Creator[] = []
+  const seen = new Set<string>()
+  const maxPages = 60
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (page > 1) {
+      await sleep(300 + Math.floor(Math.random() * 200))
+    }
+    try {
+      const { items, hasMore } = await fetchCreatorsPageHtml(page)
+      for (const c of items) {
+        if (!seen.has(c.u)) {
+          seen.add(c.u)
+          all.push(c)
+        }
+      }
+      if (!hasMore || items.length === 0) break
+    } catch {
+      break
+    }
+  }
+
+  return all
+}
+
+function refreshCatalogInBackground() {
+  if (catalogCache?.refreshing) return
+  if (catalogCache) catalogCache.refreshing = true
+
+  void scrapeFullCatalog()
+    .then((all) => {
+      if (all.length > 0) {
+        catalogCache = { all, fetchedAt: Date.now(), refreshing: false }
+      } else if (catalogCache) {
+        catalogCache.refreshing = false
+      }
+    })
+    .catch(() => {
+      if (catalogCache) catalogCache.refreshing = false
+    })
+}
+
+function getCatalog(): Creator[] | null {
+  if (!catalogCache) return null
+  if (Date.now() - catalogCache.fetchedAt > CATALOG_TTL_MS) {
+    refreshCatalogInBackground()
+  }
+  return catalogCache.all
+}
+
 /**
  * Browse a single wet3 page (no search).
  * total is a soft lower-bound so UIs that only understand totalPages still allow Next.
@@ -155,6 +221,30 @@ export async function fetchCreatorsFromWet3(options: {
 
   // twitterOnly is accepted for API compat; wet3 currently ignores it (same tiles).
   void options.twitterOnly
+
+  // --- Try serving from the in-memory catalog cache first ---
+  const cached = getCatalog()
+  if (cached && cached.length > 0) {
+    let pool = cached
+    if (search) {
+      pool = cached.filter((c) => creatorMatchesSearch(c, search))
+    }
+    const start = (page - 1) * limit
+    const slice = pool.slice(start, start + limit)
+    const hasMore = pool.length > start + limit
+
+    return {
+      items: slice,
+      total: pool.length,
+      page,
+      limit,
+      hasMore,
+      mode: search ? 'search-scan' : 'page',
+      note: search
+        ? 'Filtered from cached catalog.'
+        : undefined,
+    }
+  }
 
   // --- Search path: wet3 ignores ?search= (Alpine client filter only). ---
   // Bot-safe scan: sequential pages, 500–900ms gap, max 20 origin pages.
@@ -211,6 +301,11 @@ export async function fetchCreatorsFromWet3(options: {
 
   // --- Normal browse: one origin page ---
   const { items, hasMore } = await fetchCreatorsPageHtml(page)
+
+  // Kick off a full catalog scrape in the background on the first browse request
+  if (page === 1 && !catalogCache) {
+    refreshCatalogInBackground()
+  }
 
   // Soft total: never use "+1 only" (that capped UI at ~2 pages when limit=24, items=30).
   // When hasMore, claim enough total for many more pages; UI should prefer hasMore.

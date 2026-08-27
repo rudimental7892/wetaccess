@@ -559,18 +559,23 @@ function ProfileView({ username }: { username: string }) {
     const loadProfile = async () => {
       setLoading(true)
       setError(null)
+      setMedia([])
       setActiveTab('all')
       setCurrentPage(1)
 
       try {
-        const items = await fetchUserMedia(username)
+        const items = await fetchUserMedia(username, (partial) => {
+          if (!cancelled) {
+            setMedia(partial)
+            setLoading(false)
+          }
+        })
 
         if (!cancelled) {
           setMedia(items)
         }
       } catch (loadError) {
         if (!cancelled) {
-          setMedia([])
           setError(loadError instanceof Error ? loadError.message : 'Failed to load profile')
         }
       } finally {
