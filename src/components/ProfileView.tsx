@@ -16,6 +16,7 @@ import {
   imageUrl,
   mediaLabel,
   placeholderImage,
+  prefetchStream,
   thumbnailUrl,
   watchUrl,
 } from '../lib/wet3'
@@ -222,6 +223,7 @@ export function ProfileView({ username }: { username: string }) {
                     target="_blank"
                     rel="noreferrer"
                     aria-label={`Watch video ${mediaLabel(item)}`}
+                    onMouseEnter={() => prefetchStream(item.id)}
                   >
                     <img
                       className="w-full h-full object-cover block bg-inset"

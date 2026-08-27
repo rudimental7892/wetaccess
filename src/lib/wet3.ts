@@ -101,6 +101,14 @@ export function streamUrl(mediaId: string): string {
   return `${API_BASE}/api/stream-v2/${encodeURIComponent(mediaId)}`
 }
 
+const prefetchedIds = new Set<string>()
+
+export function prefetchStream(mediaId: string) {
+  if (prefetchedIds.has(mediaId)) return
+  prefetchedIds.add(mediaId)
+  fetch(streamUrl(mediaId)).catch(() => {})
+}
+
 /**
  * Force any CDN/absolute stream URL onto same-origin proxies.
  * Bunny returns 403 unless Referer is wet3.click — the browser must never
