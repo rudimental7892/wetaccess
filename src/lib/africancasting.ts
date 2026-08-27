@@ -31,6 +31,11 @@ export function formatAcDuration(sec: string): string {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}:${String(s).padStart(2, '0')}`
 }
 
+export function acThumbUrl(originalUrl: string): string {
+  if (!originalUrl) return ''
+  return `/api/ac-thumb?url=${encodeURIComponent(originalUrl)}`
+}
+
 export async function fetchAcCatalog(
   offset: number,
   amount: number,

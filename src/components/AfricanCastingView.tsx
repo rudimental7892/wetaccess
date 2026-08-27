@@ -1,13 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  type SyntheticEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   type CatalogVideo,
+  type EmbedResponse,
+  acThumbUrl,
   fetchAcCatalog,
   fetchAcEmbed,
   formatAcDuration,
 } from '../lib/africancasting'
 
-const PAGE_SIZES = [12, 24, 48, 96] as const
-const BATCH = 100
+const PAGE_SIZE = 24
 
 type SortKey = 'latest' | 'oldest' | 'title'
 
@@ -16,24 +24,24 @@ type AfricanCastingViewProps = {
   onLogout: () => void
 }
 
-function videoIdNum(id: string): number {
-  const n = Number.parseInt(id, 10)
-  return Number.isFinite(n) ? n : 0
+function placeholderSrc() {
+  return 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" fill="%23161320"><rect width="320" height="180"/></svg>',
+  )
 }
 
 export function AfricanCastingView({
   onSwitchSite,
   onLogout,
 }: AfricanCastingViewProps) {
-  const [all, setAll] = useState<CatalogVideo[]>([])
+  const [videos, setVideos] = useState<CatalogVideo[]>([])
   const [total, setTotal] = useState(0)
-  const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(24)
   const [sort, setSort] = useState<SortKey>('latest')
-  const [loadingCatalog, setLoadingCatalog] = useState(false)
-  const [catalogError, setCatalogError] = useState('')
-  const [reloadToken, setReloadToken] = useState(0)
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const galleryRef = useRef<HTMLElement>(null)
 
   const [activeId, setActiveId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -43,68 +51,64 @@ export function AfricanCastingView({
   const [modalLoading, setModalLoading] = useState(false)
   const [modalError, setModalError] = useState('')
 
-  const embedCache = useMemo(() => new Map<string, { mp4: string; poster: string | null }>(), [])
+  const embedCache = useMemo(() => new Map<string, EmbedResponse>(), [])
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const rows = q
-      ? all.filter((v) => {
-          const hay = `${v.title} ${v.models} ${v.channels} ${v.keywords}`.toLowerCase()
-          return hay.includes(q)
-        })
-      : [...all]
-
-    rows.sort((a, b) => {
-      if (sort === 'title') {
-        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
-      }
-      const diff = videoIdNum(b.id) - videoIdNum(a.id)
-      return sort === 'latest' ? diff : -diff
-    })
-
-    return rows
-  }, [all, query, sort])
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const safePage = Math.min(page, pageCount)
-  const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
-
-  const loadCatalog = useCallback(async () => {
-    setLoadingCatalog(true)
-    setCatalogError('')
-    setAll([])
-    setTotal(0)
-    setPage(1)
-
+  const loadPage = useCallback(async (p: number) => {
+    setLoading(true)
+    setError('')
     try {
-      const first = await fetchAcCatalog(0, BATCH)
-      if (!first.success || !first.data) throw new Error('API returned success=false')
-      setTotal(first.total_results)
-      setAll([...first.data])
-
-      let loaded = first.data.length
-      while (loaded < first.total_results) {
-        const next = await fetchAcCatalog(loaded, BATCH)
-        if (!next.data?.length) break
-        loaded += next.data.length
-        setAll((prev) => [...prev, ...next.data!])
-      }
+      const offset = (p - 1) * PAGE_SIZE
+      const res = await fetchAcCatalog(offset, PAGE_SIZE)
+      if (!res.success) throw new Error('API returned success=false')
+      setVideos(res.data ?? [])
+      setTotal(res.total_results)
     } catch (e) {
-      setCatalogError(e instanceof Error ? e.message : String(e))
+      setError(e instanceof Error ? e.message : String(e))
+      setVideos([])
     } finally {
-      setLoadingCatalog(false)
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void loadCatalog()
-  }, [loadCatalog, reloadToken])
+    void loadPage(page)
+  }, [loadPage, page])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    let rows = q
+      ? videos.filter((v) => {
+          const hay = `${v.title} ${v.models} ${v.channels} ${v.keywords}`.toLowerCase()
+          return hay.includes(q)
+        })
+      : [...videos]
+
+    if (sort === 'title') {
+      rows.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+    } else if (sort === 'oldest') {
+      rows.reverse()
+    }
+
+    return rows
+  }, [videos, query, sort])
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  const scrollToGallery = useCallback(() => {
+    galleryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  function goToPage(p: number) {
+    const clamped = Math.max(1, Math.min(totalPages, p))
+    setPage(clamped)
+    scrollToGallery()
+  }
 
   async function playVideo(video: CatalogVideo) {
     setActiveId(video.id)
     setModalOpen(true)
     setModalTitle(video.title)
-    setModalPoster(video.main_thumb)
+    setModalPoster(acThumbUrl(video.main_thumb))
     setModalMp4('')
     setModalError('')
     setModalLoading(true)
@@ -143,18 +147,13 @@ export function AfricanCastingView({
     }
   }, [modalOpen])
 
-  const pct =
-    total > 0 ? Math.min(100, Math.round((all.length / total) * 100)) : 0
+  function handleImageError(event: SyntheticEvent<HTMLImageElement>) {
+    event.currentTarget.src = placeholderSrc()
+  }
 
-  const stats = catalogError
-    ? catalogError
-    : loadingCatalog
-      ? `Loaded ${all.length.toLocaleString()} / ${total.toLocaleString()} — browse while the rest loads`
-      : `${filtered.length.toLocaleString()} matches · ${all.length.toLocaleString()} total`
-
-  const pagerNums = (() => {
-    const start = Math.max(1, safePage - 2)
-    const end = Math.min(pageCount, safePage + 2)
+  const pagerRange = (() => {
+    const start = Math.max(1, page - 2)
+    const end = Math.min(totalPages, page + 2)
     const nums: number[] = []
     for (let i = start; i <= end; i++) nums.push(i)
     return { start, end, nums }
@@ -179,129 +178,130 @@ export function AfricanCastingView({
         </div>
       </header>
 
-      <main className="page ac-page">
+      <main className="page ac-page" ref={galleryRef}>
+        {/* Hero */}
+        <section className="ac-hero">
+          <p className="ac-hero-eyebrow">Video catalog</p>
+          <h1 className="ac-hero-title">African Casting</h1>
+          <p className="ac-hero-sub">
+            {total > 0
+              ? `${total.toLocaleString()} videos · Page ${page} of ${totalPages}`
+              : loading
+                ? 'Loading catalog...'
+                : 'Catalog'}
+          </p>
+        </section>
+
+        {/* Toolbar */}
         <div className="ac-toolbar">
           <label className="ac-search">
             <input
               type="search"
-              placeholder="Search title, model, category…"
+              placeholder="Search title, model, category..."
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setPage(1)
-              }}
+              onChange={(e) => setQuery(e.target.value)}
             />
           </label>
-          <label className="ac-page-size">
+          <label className="ac-select-label">
             Sort
             <select
               value={sort}
-              onChange={(e) => {
-                setSort(e.target.value as SortKey)
-                setPage(1)
-              }}
+              onChange={(e) => setSort(e.target.value as SortKey)}
             >
               <option value="latest">Latest</option>
               <option value="oldest">Oldest</option>
               <option value="title">Title</option>
             </select>
           </label>
-          <label className="ac-page-size">
-            Per page
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value) as (typeof PAGE_SIZES)[number])
-                setPage(1)
-              }}
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="nav-pill"
-            disabled={loadingCatalog}
-            onClick={() => {
-              embedCache.clear()
-              setReloadToken((n) => n + 1)
-            }}
-          >
-            Reload
-          </button>
         </div>
 
-        {loadingCatalog ? (
-          <div className="ac-progress-wrap">
-            <div className="ac-progress">
-              <span style={{ width: `${pct}%` }} />
-            </div>
+        {error ? (
+          <div className="ac-error">
+            <p>{error}</p>
+            <button type="button" className="nav-pill" onClick={() => loadPage(page)}>
+              Retry
+            </button>
           </div>
         ) : null}
 
-        <p className={`ac-stats${catalogError ? ' error' : ''}`}>{stats}</p>
-
+        {/* Grid */}
         <div className="ac-grid">
-          {slice.length === 0 ? (
-            <p className="ac-empty">No matches yet.</p>
-          ) : (
-            slice.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                className={`ac-card${v.id === activeId ? ' active' : ''}`}
-                onClick={() => void playVideo(v)}
-                title={`Play #${v.id}`}
-              >
-                <img src={v.main_thumb} alt="" loading="lazy" />
-                <div className="ac-card-body">
-                  <h3>{v.title}</h3>
-                  <p className="meta">
-                    {v.models || '—'} · {formatAcDuration(v.length)} · #{v.id}
-                  </p>
+          {loading
+            ? Array.from({ length: PAGE_SIZE }, (_, i) => (
+                <div key={`skel-${i}`} className="ac-card-skeleton">
+                  <div className="ac-card-skeleton-thumb" />
+                  <div className="ac-card-skeleton-body">
+                    <div className="ac-card-skeleton-line wide" />
+                    <div className="ac-card-skeleton-line narrow" />
+                  </div>
                 </div>
-              </button>
-            ))
-          )}
+              ))
+            : filtered.length === 0
+              ? <p className="ac-empty">No matches on this page.</p>
+              : filtered.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className={`ac-card${v.id === activeId ? ' active' : ''}`}
+                    onClick={() => void playVideo(v)}
+                  >
+                    <div className="ac-card-thumb">
+                      <img
+                        src={acThumbUrl(v.main_thumb)}
+                        alt=""
+                        loading="lazy"
+                        onError={handleImageError}
+                      />
+                      <span className="ac-card-play">&#9654;</span>
+                      <span className="ac-card-duration">{formatAcDuration(v.length)}</span>
+                    </div>
+                    <div className="ac-card-body">
+                      <h3>{v.title}</h3>
+                      <p className="ac-card-meta">{v.models || '—'}</p>
+                      {v.channels ? (
+                        <p className="ac-card-tags">{v.channels}</p>
+                      ) : null}
+                    </div>
+                  </button>
+                ))}
         </div>
 
-        {filtered.length > 0 ? (
+        {/* Pagination */}
+        {total > 0 ? (
           <nav className="ac-pager" aria-label="Pagination">
             <button
               type="button"
-              disabled={safePage <= 1}
-              onClick={() => setPage(safePage - 1)}
+              disabled={page <= 1}
+              onClick={() => goToPage(page - 1)}
             >
               Prev
             </button>
-            {pagerNums.start > 1 ? (
-              <button type="button" onClick={() => setPage(1)}>
-                1
-              </button>
+            {pagerRange.start > 1 ? (
+              <>
+                <button type="button" onClick={() => goToPage(1)}>1</button>
+                {pagerRange.start > 2 ? <span className="ac-pager-dots">...</span> : null}
+              </>
             ) : null}
-            {pagerNums.nums.map((n) => (
+            {pagerRange.nums.map((n) => (
               <button
                 key={n}
                 type="button"
-                className={n === safePage ? 'active' : ''}
-                onClick={() => setPage(n)}
+                className={n === page ? 'active' : ''}
+                onClick={() => goToPage(n)}
               >
                 {n}
               </button>
             ))}
-            {pagerNums.end < pageCount ? (
-              <button type="button" onClick={() => setPage(pageCount)}>
-                {pageCount}
-              </button>
+            {pagerRange.end < totalPages ? (
+              <>
+                {pagerRange.end < totalPages - 1 ? <span className="ac-pager-dots">...</span> : null}
+                <button type="button" onClick={() => goToPage(totalPages)}>{totalPages}</button>
+              </>
             ) : null}
             <button
               type="button"
-              disabled={safePage >= pageCount}
-              onClick={() => setPage(safePage + 1)}
+              disabled={page >= totalPages}
+              onClick={() => goToPage(page + 1)}
             >
               Next
             </button>
@@ -309,6 +309,7 @@ export function AfricanCastingView({
         ) : null}
       </main>
 
+      {/* Video modal */}
       {modalOpen ? (
         <div className="ac-modal" role="dialog" aria-modal="true" aria-labelledby="ac-modal-title">
           <button
@@ -321,12 +322,15 @@ export function AfricanCastingView({
             <header className="ac-modal-header">
               <h2 id="ac-modal-title">{modalTitle}</h2>
               <button type="button" className="ac-modal-close" onClick={closeModal}>
-                ×
+                &times;
               </button>
             </header>
             <div className="ac-modal-body">
               {modalLoading ? (
-                <p className="ac-modal-status">Resolving embed MP4…</p>
+                <div className="ac-modal-loading">
+                  <div className="ac-spinner" />
+                  <p>Loading video...</p>
+                </div>
               ) : modalError ? (
                 <p className="ac-modal-status error">{modalError}</p>
               ) : modalMp4 ? (
@@ -340,7 +344,7 @@ export function AfricanCastingView({
                     src={modalMp4}
                   />
                   <p className="ac-modal-meta">
-                    ID {activeId} ·{' '}
+                    ID {activeId} &middot;{' '}
                     <a href={modalMp4} target="_blank" rel="noopener noreferrer">
                       CDN link
                     </a>
