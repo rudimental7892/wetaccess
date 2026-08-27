@@ -162,7 +162,7 @@ export function mediaLabel(item: MediaItem): string {
 
 export function thumbnailUrl(item: MediaItem): string {
   if (item.webp_thumb) {
-    return wet3AssetUrl(item.webp_thumb)
+    return ensureProxiedPlayUrl(wet3AssetUrl(item.webp_thumb))
   }
 
   // AAF CDN thumbs need signed cookies now — use wet3 /api/image instead.
@@ -171,7 +171,7 @@ export function thumbnailUrl(item: MediaItem): string {
   }
 
   if (item.path.match(/\.(jpe?g|png|webp|gif)$/i)) {
-    return wet3AssetUrl(item.path)
+    return ensureProxiedPlayUrl(wet3AssetUrl(item.path))
   }
 
   return imageUrl(item.id)
@@ -758,7 +758,7 @@ export function dropItemThumbnailUrl(item: DropItem): string {
     if (thumb.includes('allaccessfans.co')) {
       return imageUrl(item.id)
     }
-    return wet3AssetUrl(thumb)
+    return ensureProxiedPlayUrl(wet3AssetUrl(thumb))
   }
 
   // YF pack stills + AAF stills: stream-v2 resolves to a JPEG (via proxy rewrite).

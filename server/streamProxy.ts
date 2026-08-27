@@ -12,6 +12,28 @@ import { obtainWet3StreamToken, streamV2UrlWithToken } from './wet3StreamToken'
 
 const WET3_ORIGIN = 'https://wet3.click'
 
+/**
+ * Derive Bunny CDN HLS playlist from wet3's image API.
+ * `/api/image/{id}` → 303 → `https://vz-xxx.b-cdn.net/{uuid}/preview.webp`
+ * Replace `preview.webp` with `playlist.m3u8` to get the stream.
+ */
+async function resolveBunnyPlaylist(mediaId: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${WET3_ORIGIN}/api/image/${encodeURIComponent(mediaId)}`, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: wet3FetchHeaders({}),
+    })
+    const loc = r.headers.get('location')
+    if (!loc) return null
+    const match = loc.match(/(https?:\/\/vz-[a-f0-9-]+\.b-cdn\.net\/[a-f0-9-]+\/)preview\.\w+/i)
+    if (!match) return null
+    return `${match[1]}playlist.m3u8`
+  } catch {
+    return null
+  }
+}
+
 type ProxyRes = {
   statusCode: number
   setHeader: (k: string, v: string) => void
@@ -154,8 +176,8 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
 
         let upstream = await fetchWet3Stream(targetUrl)
 
-        // Wet3 now requires stream token after ads: 402 JSON stream_token_required.
-        if (!upstream.headers.get('location') && upstream.status === 402) {
+        // Wet3 gates streams behind an ad token: 402 or 400 "Missing url" without one.
+        if (!upstream.headers.get('location') && (upstream.status === 402 || upstream.status === 400)) {
           const st = await obtainWet3StreamToken(mediaId, guestCookie)
           if (st) {
             targetUrl = streamV2UrlWithToken(mediaId, st)
@@ -167,6 +189,16 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
         if (location) {
           await serveProxiedLocation(res, location)
           return
+        }
+
+        // stream-v2 is dead (400 "Missing url"). Derive the HLS playlist from
+        // wet3's image API which redirects to Bunny CDN preview.webp.
+        if (upstream.status === 400) {
+          const playlistUrl = await resolveBunnyPlaylist(mediaId)
+          if (playlistUrl) {
+            await serveProxiedLocation(res, playlistUrl)
+            return
+          }
         }
 
         res.statusCode = upstream.status
