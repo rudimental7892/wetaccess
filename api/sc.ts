@@ -119,6 +119,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
 
+    if (op === 'pages') {
+      const pages = [
+        '/', '/about', '/terms', '/help', '/disclosure',
+        '/earnings-and-payouts', '/privacy-policy', '/content-monitor-policy',
+        '/complaints-policy', '/earnings',
+      ]
+      const results: Record<string, { status: number; title: string; excerpt: string }> = {}
+      await Promise.all(
+        pages.map(async (p) => {
+          try {
+            const r = await fetch(`${SC_WEB}${p}`, {
+              headers: { ...BROWSER_HEADERS, Accept: 'text/html' },
+            })
+            const html = await r.text()
+            const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/)
+            const bodyText = html
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+            results[p] = {
+              status: r.status,
+              title: titleMatch?.[1] ?? '',
+              excerpt: bodyText.slice(0, 600),
+            }
+          } catch {
+            results[p] = { status: 0, title: 'error', excerpt: '' }
+          }
+        }),
+      )
+      sendJson(res, 200, results)
+      return
+    }
+
+    if (op === 'earnings') {
+      const r = await fetch(`${SC_WEB}/earnings`, {
+        headers: { ...BROWSER_HEADERS, Accept: 'text/html' },
+      })
+      const html = await r.text()
+      const bodyText = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim()
+      sendJson(res, 200, { status: r.status, text: bodyText.slice(0, 3000) })
+      return
+    }
+
     sendJson(res, 400, { error: `unknown op: ${op}` })
   } catch (error: unknown) {
     sendJson(res, 502, {

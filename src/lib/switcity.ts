@@ -47,75 +47,22 @@ export async function fetchScHealth(): Promise<ScHealthCheck> {
   return res.json() as Promise<ScHealthCheck>
 }
 
-export async function fetchScDiscover(): Promise<{
-  source: string
-  creators: ScCreator[]
-  raw: unknown
-}> {
-  const res = await fetch('/api/sc?op=discover')
-  if (!res.ok) throw new Error(`Discover failed (${res.status})`)
-  const body = (await res.json()) as { source: string; data: unknown }
-
-  const creators = extractCreatorsFromSSR(body.data)
-  return { source: body.source, creators, raw: body.data }
+export type ScPageInfo = {
+  status: number
+  title: string
+  excerpt: string
 }
 
-function extractCreatorsFromSSR(data: unknown): ScCreator[] {
-  if (!data || typeof data !== 'object') return []
+export async function fetchScPages(): Promise<Record<string, ScPageInfo>> {
+  const res = await fetch('/api/sc?op=pages')
+  if (!res.ok) throw new Error(`Pages scan failed (${res.status})`)
+  return res.json() as Promise<Record<string, ScPageInfo>>
+}
 
-  const results: ScCreator[] = []
-  const seen = new Set<string>()
-
-  function walk(obj: unknown): void {
-    if (!obj || typeof obj !== 'object') return
-    if (Array.isArray(obj)) {
-      for (const item of obj) walk(item)
-      return
-    }
-
-    const record = obj as Record<string, unknown>
-
-    if (
-      typeof record.username === 'string' &&
-      record.username.length > 0 &&
-      !seen.has(record.username)
-    ) {
-      const hasCreatorFields =
-        'displayName' in record ||
-        'display_name' in record ||
-        'bio' in record ||
-        'avatar' in record ||
-        'profileImage' in record ||
-        'subscriberCount' in record ||
-        'subscriber_count' in record
-
-      if (hasCreatorFields) {
-        seen.add(record.username)
-        results.push({
-          username: record.username,
-          displayName:
-            String(record.displayName ?? record.display_name ?? record.name ?? record.username),
-          avatar: (record.avatar ?? record.profileImage ?? record.profile_image ?? null) as
-            | string
-            | null,
-          bio: String(record.bio ?? record.about ?? ''),
-          verified: Boolean(record.verified ?? record.isVerified ?? record.is_verified),
-          subscriberCount: Number(
-            record.subscriberCount ?? record.subscriber_count ?? record.subscribers ?? 0,
-          ),
-          postCount: Number(record.postCount ?? record.post_count ?? record.posts ?? 0),
-          category: String(record.category ?? record.type ?? ''),
-        })
-      }
-    }
-
-    for (const value of Object.values(record)) {
-      if (value && typeof value === 'object') walk(value)
-    }
-  }
-
-  walk(data)
-  return results
+export async function fetchScEarnings(): Promise<{ status: number; text: string }> {
+  const res = await fetch('/api/sc?op=earnings')
+  if (!res.ok) throw new Error(`Earnings fetch failed (${res.status})`)
+  return res.json() as Promise<{ status: number; text: string }>
 }
 
 export function scAvatarPlaceholder(letter: string): string {

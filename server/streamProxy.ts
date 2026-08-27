@@ -34,6 +34,37 @@ async function resolveBunnyPlaylist(mediaId: string): Promise<string | null> {
   }
 }
 
+const BUNNY_PLAYLIST_RE = /https?:\/\/vz-[a-f0-9-]+\.b-cdn\.net\/[a-f0-9-]+\/playlist\.m3u8/i
+
+/**
+ * Resolve playlist via the monetized-link → ad-complete → player page flow.
+ * Some videos return 200 from /api/image (thumbnail served directly, not a 303
+ * redirect to Bunny CDN), but their player page embeds the Bunny playlist URL.
+ */
+async function resolvePlaylistFromPlayerPage(
+  mediaId: string,
+  st: string,
+): Promise<string | null> {
+  try {
+    const r = await fetch(
+      `${WET3_ORIGIN}/p/${encodeURIComponent(mediaId)}?st=${encodeURIComponent(st)}`,
+      {
+        method: 'GET',
+        redirect: 'follow',
+        headers: wet3FetchHeaders({
+          Cookie: `wet3_user_id=${randomUUID()}`,
+        }),
+      },
+    )
+    if (!r.ok) return null
+    const html = await r.text()
+    const match = html.match(BUNNY_PLAYLIST_RE)
+    return match ? match[0] : null
+  } catch {
+    return null
+  }
+}
+
 type ProxyRes = {
   statusCode: number
   setHeader: (k: string, v: string) => void
@@ -178,17 +209,29 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
           return
         }
 
+        // Second path: some videos return 200 from /api/image (thumbnail served
+        // directly) but their player page still embeds a Bunny CDN playlist URL.
+        // Obtain the ad-completion token, then scrape the player page.
+        const st = existingSt ?? await obtainWet3StreamToken(mediaId, guestCookie)
+        if (st) {
+          const playerPlaylist = await resolvePlaylistFromPlayerPage(mediaId, st)
+          if (playerPlaylist) {
+            await serveProxiedLocation(res, playerPlaylist)
+            return
+          }
+        }
+
         // Fallback: try stream-v2 in case wet3 restores it or for non-Bunny media.
-        let targetUrl = existingSt
-          ? streamV2UrlWithToken(mediaId, existingSt)
+        let targetUrl = st
+          ? streamV2UrlWithToken(mediaId, st)
           : `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
 
         let upstream = await fetchWet3Stream(targetUrl)
 
-        if (!upstream.headers.get('location') && (upstream.status === 402 || upstream.status === 400)) {
-          const st = await obtainWet3StreamToken(mediaId, guestCookie)
-          if (st) {
-            targetUrl = streamV2UrlWithToken(mediaId, st)
+        if (!upstream.headers.get('location') && (upstream.status === 402 || upstream.status === 400) && !st) {
+          const freshSt = await obtainWet3StreamToken(mediaId, guestCookie)
+          if (freshSt) {
+            targetUrl = streamV2UrlWithToken(mediaId, freshSt)
             upstream = await fetchWet3Stream(targetUrl)
           }
         }

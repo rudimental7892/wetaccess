@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  type ScCreator,
   type ScHealthCheck,
-  fetchScDiscover,
+  type ScPageInfo,
+  fetchScPages,
+  fetchScEarnings,
   fetchScHealth,
-  scAvatarPlaceholder,
 } from '../lib/switcity'
 
 type SwitCityViewProps = {
@@ -78,25 +78,25 @@ export function SwitCityView({ onSwitchSite, onLogout }: SwitCityViewProps) {
 }
 
 function DiscoverTab() {
-  const [creators, setCreators] = useState<ScCreator[]>([])
+  const [pages, setPages] = useState<Record<string, ScPageInfo> | null>(null)
+  const [earnings, setEarnings] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [source, setSource] = useState('')
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
 
-    void fetchScDiscover()
-      .then((data) => {
+    void Promise.all([fetchScPages(), fetchScEarnings()])
+      .then(([p, e]) => {
         if (cancelled) return
-        setCreators(data.creators)
-        setSource(data.source)
+        setPages(p)
+        setEarnings(e.text)
       })
       .catch((e: unknown) => {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : 'Failed to load discover')
+        setError(e instanceof Error ? e.message : 'Failed to scan')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -105,27 +105,23 @@ function DiscoverTab() {
     return () => { cancelled = true }
   }, [])
 
-  const handleImgError = (e: SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget
-    const letter = img.alt?.charAt(0) || 'S'
-    img.src = scAvatarPlaceholder(letter)
-  }
+  const publicPages = pages
+    ? Object.entries(pages).filter(([, v]) => v.status === 200)
+    : []
 
   return (
     <>
       <section className="relative overflow-hidden mb-7 p-7 border border-border rounded-3xl bg-gradient-to-br from-[#f59e0b]/[0.08] via-transparent to-transparent bg-surface shadow-sm">
         <p className="mb-2.5 text-[#f59e0b] text-xs font-bold tracking-[0.14em] uppercase">
-          SwitCity
+          Reconnaissance
         </p>
         <h1 className="m-0 font-display text-[clamp(2rem,6vw,3rem)] leading-[0.95] font-[900] tracking-tighter max-w-[14ch]">
-          Discover creators
+          Public pages
         </h1>
         <p className="mt-3.5 max-w-[48ch] text-muted text-[15px]">
           {loading
-            ? 'Scraping switcity.com discover page...'
-            : creators.length > 0
-              ? `${creators.length} creators found via ${source} scrape`
-              : 'Creator data may require authentication. Browse the public health data or site info.'}
+            ? 'Scanning switcity.com public surface...'
+            : `${publicPages.length} accessible pages found. Live scrape of switcity.com.`}
         </p>
       </section>
 
@@ -136,77 +132,57 @@ function DiscoverTab() {
       ) : null}
 
       {loading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3.5">
-          {Array.from({ length: 8 }, (_, i) => (
+        <div className="grid gap-3.5">
+          {Array.from({ length: 4 }, (_, i) => (
             <div
               key={i}
-              className="aspect-[0.82] relative overflow-hidden rounded-xl bg-card border border-border after:absolute after:inset-0 after:-translate-x-full after:bg-gradient-to-r after:from-transparent after:via-white/[0.06] after:to-transparent after:animate-[shimmer_1.4s_infinite]"
+              className="h-24 relative overflow-hidden rounded-xl bg-card border border-border after:absolute after:inset-0 after:-translate-x-full after:bg-gradient-to-r after:from-transparent after:via-white/[0.06] after:to-transparent after:animate-[shimmer_1.4s_infinite]"
             />
           ))}
         </div>
       ) : null}
 
-      {!loading && creators.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3.5">
-          {creators.map((c) => (
-            <a
-              key={c.username}
-              href={`https://switcity.com/${c.username}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group grid gap-3.5 p-4 border border-border bg-card rounded-xl transition-all hover:-translate-y-0.5 hover:border-[#f59e0b]/30 hover:bg-card-hover hover:shadow-lg"
-            >
-              <img
-                src={c.avatar || scAvatarPlaceholder(c.username.charAt(0).toUpperCase())}
-                alt={c.displayName}
-                loading="lazy"
-                onError={handleImgError}
-                className="w-full aspect-square rounded-2xl object-cover bg-inset"
-              />
-              <div className="grid gap-1 min-w-0">
-                <strong className="font-display text-[15px] font-bold truncate">
-                  @{c.username}
-                </strong>
-                <span className="text-[13px] text-muted truncate">{c.displayName}</span>
-                {c.bio ? (
-                  <span className="text-[12px] text-soft truncate">{c.bio}</span>
-                ) : null}
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {c.verified ? (
-                    <span className="px-2 py-0.5 rounded-full bg-[#f59e0b]/15 text-[#fbbf24] text-[10px] font-bold uppercase tracking-wide">
-                      Verified
-                    </span>
-                  ) : null}
-                  {c.subscriberCount > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-inset text-soft text-[10px] font-semibold uppercase tracking-wide">
-                      {c.subscriberCount} subs
-                    </span>
-                  ) : null}
-                  {c.postCount > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-inset text-soft text-[10px] font-semibold uppercase tracking-wide">
-                      {c.postCount} posts
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </a>
-          ))}
+      {!loading && earnings ? (
+        <div className="mb-4 p-5 rounded-xl border border-danger/30 bg-danger/[0.04]">
+          <h3 className="m-0 mb-1 text-xs font-bold tracking-[0.08em] uppercase text-danger">
+            CRITICAL: /earnings page publicly accessible
+          </h3>
+          <p className="m-0 mb-3 text-muted text-[13px]">
+            Exposes usernames, bank names, transaction amounts, and payout status without authentication.
+          </p>
+          <pre className="m-0 p-3 rounded-lg bg-inset text-[11px] text-soft overflow-auto max-h-[280px] whitespace-pre-wrap">
+            {earnings}
+          </pre>
         </div>
       ) : null}
 
-      {!loading && creators.length === 0 && !error ? (
-        <div className="p-12 text-center border border-dashed border-border rounded-xl bg-white/[0.02]">
-          <p className="text-muted text-[15px] mb-3">
-            No public creator data extracted. The discover page may require authentication or use client-side rendering.
-          </p>
-          <a
-            href="https://switcity.com/discover"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex px-4 py-2.5 rounded-full border border-[#f59e0b]/40 bg-[#f59e0b]/10 text-[#fbbf24] text-sm font-semibold hover:bg-[#f59e0b]/20 transition-all"
-          >
-            Open switcity.com/discover
-          </a>
+      {!loading && pages ? (
+        <div className="grid gap-3">
+          {Object.entries(pages).map(([path, info]) => (
+            <a
+              key={path}
+              href={`https://switcity.com${path}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group p-4 border border-border bg-card rounded-xl transition-all hover:border-[#f59e0b]/30 hover:bg-card-hover"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                    info.status === 200
+                      ? 'bg-emerald-500/15 text-emerald-400'
+                      : 'bg-red-500/15 text-red-400'
+                  }`}
+                >
+                  {info.status}
+                </span>
+                <code className="text-[13px] text-foreground font-semibold">{path}</code>
+              </div>
+              <p className="m-0 text-[12px] text-muted leading-relaxed line-clamp-2">
+                {info.excerpt.slice(0, 200)}
+              </p>
+            </a>
+          ))}
         </div>
       ) : null}
     </>
@@ -407,33 +383,37 @@ function InfoTab() {
         </InfoCard>
 
         <InfoCard title="Business">
-          <InfoRow label="Payments" value="Bani (PCI-DSS)" />
+          <InfoRow label="Payments" value="Bani + Paystack + Flutterwave" />
           <InfoRow label="Currency" value="Nigerian Naira (NGN)" />
           <InfoRow label="Market" value="Africa (Nigeria focus)" />
+          <InfoRow label="Revenue" value="Subs, PPV, Tips, Live Streaming" />
+          <InfoRow label="Payout cycle" value="7 days pending, manual withdraw" />
           <InfoRow label="White-label" value="Fork of Ndloo (ndloo.com)" />
           <InfoRow label="Auth" value="JWT + refresh tokens" />
-          <InfoRow label="Video calls" value="Custom implementation" />
+          <InfoRow label="Contact" value="hello@switcity.com" />
         </InfoCard>
 
         <InfoCard title="Security Issues" danger>
           <InfoRow label="CRITICAL" value="/health exposes DB + Redis metrics" warn />
+          <InfoRow label="CRITICAL" value="/earnings leaks usernames + bank info" warn />
           <InfoRow label="HIGH" value="JWT in localStorage (XSS risk)" warn />
           <InfoRow label="HIGH" value="Server-Timing header leaks DB timing" warn />
           <InfoRow label="HIGH" value="No CSP/HSTS on frontend" warn />
           <InfoRow label="MEDIUM" value="nginx version disclosure (CVEs)" warn />
           <InfoRow label="MEDIUM" value="Unauthenticated Socket.IO" warn />
-          <InfoRow label="MEDIUM" value="Incomplete Ndloo rebranding" />
           <InfoRow label="MEDIUM" value="Checkbox-only age verification" />
         </InfoCard>
 
-        <InfoCard title="API Endpoints">
-          <InfoRow label="GET /health" value="Public (no auth)" warn />
-          <InfoRow label="POST /auth/login" value="Public" />
-          <InfoRow label="POST /auth/refresh-token" value="Auth required" />
-          <InfoRow label="GET /feed" value="Auth required" />
-          <InfoRow label="GET /notifications" value="Auth required" />
-          <InfoRow label="GET /socket.io/" value="No auth for handshake" warn />
-          <InfoRow label="GET /video-calls/*" value="Auth required" />
+        <InfoCard title="Public Surface">
+          <InfoRow label="/" value="Landing page (no auth)" />
+          <InfoRow label="/about" value="Company info, mission, categories" />
+          <InfoRow label="/help" value="FAQ with internal flow details" />
+          <InfoRow label="/earnings" value="Leaks users, banks, amounts" warn />
+          <InfoRow label="/terms" value="Legal terms (updated Aug 2026)" />
+          <InfoRow label="/privacy-policy" value="Data handling disclosure" />
+          <InfoRow label="/content-monitor-policy" value="Moderation rules" />
+          <InfoRow label="/earnings-and-payouts" value="Fee structure, payout flow" />
+          <InfoRow label="GET /health" value="DB + Redis metrics (no auth)" warn />
         </InfoCard>
 
         <InfoCard title="Cache Namespaces">
