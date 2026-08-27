@@ -19,8 +19,10 @@ export type ScHealthCheck = {
             misses: number
             errors: number
             loaderCalls: number
-            loaderErrors: number
-            avgLatencyMs: number
+            loaderDurationTotalMs: number
+            loaderDurationMaxMs: number
+            hitRate: number
+            loaderAvgMs: number
           }
         >
       }
