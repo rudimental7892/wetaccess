@@ -346,7 +346,7 @@ function HealthTab() {
                             {ns.errors.toLocaleString()}
                           </td>
                           <td className="py-2.5 pr-4 tabular-nums text-muted">{hitRate}%</td>
-                          <td className="py-2.5 tabular-nums text-muted">{ns.avgLatencyMs.toFixed(1)}ms</td>
+                          <td className="py-2.5 tabular-nums text-muted">{(ns.loaderAvgMs ?? ns.avgLatencyMs ?? 0).toFixed(1)}ms</td>
                         </tr>
                       )
                     },
