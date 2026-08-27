@@ -74,6 +74,92 @@ function aafStillUrlFromFakeHls(nested: string): string | null {
 }
 
 /**
+ * Derive Bunny CDN HLS playlist from wet3's image API.
+ * `/api/image/{id}` → 303 → `https://vz-xxx.b-cdn.net/{uuid}/preview.webp`
+ * Replace `preview.webp` with `playlist.m3u8` to get the stream.
+ * stream-v2 is dead (always 400), so this is the primary playback path.
+ */
+async function resolveBunnyPlaylist(mediaId: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${WET3_ORIGIN}/api/image/${encodeURIComponent(mediaId)}`, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: '*/*',
+        Referer: `${WET3_ORIGIN}/`,
+        Origin: WET3_ORIGIN,
+      },
+    })
+    const loc = r.headers.get('location')
+    if (!loc) return null
+    const match = loc.match(/(https?:\/\/vz-[a-f0-9-]+\.b-cdn\.net\/[a-f0-9-]+\/)preview\.\w+/i)
+    if (!match) return null
+    return `${match[1]}playlist.m3u8`
+  } catch {
+    return null
+  }
+}
+
+async function inlineFetchAndServePlaylist(
+  res: VercelResponse,
+  cdnUrl: string,
+): Promise<boolean> {
+  try {
+    const cdn = await fetch(cdnUrl, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: '*/*',
+        Referer: `${WET3_ORIGIN}/`,
+        Origin: WET3_ORIGIN,
+      },
+    })
+    const cdnBuf = Buffer.from(await cdn.arrayBuffer())
+    const cdnCt = cdn.headers.get('content-type')
+    const finalUrl = cdn.url || cdnUrl
+    const head = cdnBuf.subarray(0, 7).toString('utf8')
+    const isPlaylist =
+      (cdnCt ?? '').includes('mpegurl') ||
+      (cdnCt ?? '').includes('m3u8') ||
+      head.startsWith('#EXTM3U')
+
+    res.status(cdn.status)
+    res.setHeader('cache-control', 'private, no-store')
+    res.setHeader('access-control-allow-origin', '*')
+    res.setHeader('x-wetaccess-play-url', hlsProxyPath(cdnUrl))
+
+    if (isPlaylist) {
+      const text = cdnBuf.toString('utf8')
+      const rewrittenPlaylist = text
+        .split('\n')
+        .map((line) => {
+          const trimmed = line.trim()
+          if (!trimmed) return line
+          if (trimmed.startsWith('#')) {
+            return line.replace(/URI="([^"]+)"/gi, (_m, uri: string) => {
+              return `URI="${hlsProxyPath(new URL(uri, finalUrl).href)}"`
+            })
+          }
+          return hlsProxyPath(new URL(trimmed, finalUrl).href)
+        })
+        .join('\n')
+      res.setHeader('content-type', 'application/vnd.apple.mpegurl')
+      res.end(Buffer.from(rewrittenPlaylist))
+      return true
+    }
+
+    if (cdnCt) res.setHeader('content-type', cdnCt)
+    res.end(cdnBuf)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Keep wet3 relative redirects on /wet3-api; send Bunny CDN / AAF stills to HLS proxy.
  */
 function rewriteLocation(location: string): string {
@@ -223,23 +309,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     Cookie: `wet3_user_id=${randomUUID()}`,
   }
 
-  // stream-v2/{id} without st= → wet3 returns 402 stream_token_required.
-  // Auto-complete ad gate once, then retry with ?st=.
+  // stream-v2/{id}: try Bunny CDN resolution first (stream-v2 is dead / always 400).
   const streamIdMatch = path.match(/^api\/stream-v2\/([^/]+)$/)
-  if (
-    streamIdMatch &&
-    !path.includes('proxy') &&
-    !incomingUrl.searchParams.get('st')
-  ) {
-    try {
-      const mediaId = decodeURIComponent(streamIdMatch[1])
-      const st = await obtainWet3StreamToken(mediaId, headers.Cookie)
-      if (st) {
-        targetUrl = streamV2UrlWithToken(mediaId, st)
-        search = `st=${encodeURIComponent(st)}`
+  if (streamIdMatch && !path.includes('proxy')) {
+    const mediaId = decodeURIComponent(streamIdMatch[1])
+
+    const playlistUrl = await resolveBunnyPlaylist(mediaId)
+    if (playlistUrl) {
+      const served = await inlineFetchAndServePlaylist(res, playlistUrl)
+      if (served) return
+    }
+
+    // Fallback: stream-v2 with ad token in case wet3 restores it.
+    if (!incomingUrl.searchParams.get('st')) {
+      try {
+        const st = await obtainWet3StreamToken(mediaId, headers.Cookie)
+        if (st) {
+          targetUrl = streamV2UrlWithToken(mediaId, st)
+          search = `st=${encodeURIComponent(st)}`
+        }
+      } catch {
+        // fall through
       }
-    } catch {
-      // fall through — original request may still work for unlocked guests
     }
   }
 

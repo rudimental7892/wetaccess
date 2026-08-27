@@ -1,3 +1,6 @@
+// Vercel ESM requires explicit .js extension for relative imports at runtime.
+import { fetchProxiedMedia } from './_lib/hlsProxyCore.js'
+
 type VercelRequest = {
   query: {
     url?: string | string[]
@@ -12,87 +15,6 @@ type VercelResponse = {
 
 export const config = {
   maxDuration: 30,
-}
-
-const WET3_ORIGIN = 'https://wet3.click'
-const AAF_ORIGIN = 'https://allaccessfans.co'
-const LZ_ORIGIN = 'https://leakedzone.com'
-
-function isAllowedHlsUrl(raw: string): boolean {
-  try {
-    const url = new URL(raw)
-    if (url.protocol !== 'https:') return false
-    const host = url.hostname
-    return (
-      host.endsWith('.b-cdn.net') ||
-      host.endsWith('.allaccessfans.co') ||
-      host === 'media.allaccessfans.co' ||
-      host === 'wet3.click' ||
-      host === 'www.wet3.click' ||
-      host === 'wet3.site' ||
-      host === 'www.wet3.site' ||
-      host.endsWith('.wet3.click') ||
-      host.endsWith('.wet3.site') ||
-      host === 'leakedzone.com' ||
-      host === 'www.leakedzone.com'
-    )
-  } catch {
-    return false
-  }
-}
-
-function proxyPath(targetUrl: string): string {
-  return `/api/hls-proxy?url=${encodeURIComponent(targetUrl)}`
-}
-
-function rewritePlaylist(playlistText: string, playlistUrl: string): string {
-  return playlistText
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim()
-      if (!trimmed) return line
-      if (trimmed.startsWith('#')) {
-        return line.replace(/URI="([^"]+)"/gi, (_m, uri: string) => {
-          return `URI="${proxyPath(new URL(uri, playlistUrl).href)}"`
-        })
-      }
-      return proxyPath(new URL(trimmed, playlistUrl).href)
-    })
-    .join('\n')
-}
-
-function fetchHeadersFor(targetUrl: string): Record<string, string> {
-  const base = {
-    'User-Agent':
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    Accept: '*/*',
-  }
-
-  try {
-    const host = new URL(targetUrl).hostname
-    if (host.endsWith('allaccessfans.co')) {
-      return {
-        ...base,
-        Referer: `${AAF_ORIGIN}/`,
-        Origin: AAF_ORIGIN,
-      }
-    }
-    if (host === 'leakedzone.com' || host === 'www.leakedzone.com') {
-      return {
-        ...base,
-        Referer: `${LZ_ORIGIN}/`,
-        Origin: LZ_ORIGIN,
-      }
-    }
-  } catch {
-    // fall through
-  }
-
-  return {
-    ...base,
-    Referer: `${WET3_ORIGIN}/`,
-    Origin: WET3_ORIGIN,
-  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -116,50 +38,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  if (!isAllowedHlsUrl(decoded)) {
-    res.status(400)
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'url host not allowed', detail: `host not allowlisted: ${decoded}` }))
-    return
+  const result = await fetchProxiedMedia(decoded)
+  const isImage = result.contentType?.startsWith('image/') ?? false
+
+  res.status(result.status)
+  if (result.contentType) {
+    res.setHeader('content-type', result.contentType)
   }
-
-  try {
-    const upstream = await fetch(decoded, {
-      redirect: 'follow',
-      headers: fetchHeadersFor(decoded),
-    })
-
-    const contentType = upstream.headers.get('content-type')
-    const buffer = Buffer.from(await upstream.arrayBuffer())
-    const finalUrl = upstream.url || decoded
-    const textHead = buffer.subarray(0, 7).toString('utf8')
-    const looksLikePlaylist =
-      (contentType ?? '').includes('mpegurl') ||
-      (contentType ?? '').includes('m3u8') ||
-      textHead.startsWith('#EXTM3U')
-
-    res.status(upstream.status)
-    res.setHeader('cache-control', 'private, no-store')
-    res.setHeader('access-control-allow-origin', '*')
-
-    if (looksLikePlaylist) {
-      res.setHeader('content-type', 'application/vnd.apple.mpegurl')
-      res.end(Buffer.from(rewritePlaylist(buffer.toString('utf8'), finalUrl)))
-      return
-    }
-
-    if (contentType) {
-      res.setHeader('content-type', contentType)
-    }
-    res.end(buffer)
-  } catch (error) {
-    res.status(502)
-    res.setHeader('content-type', 'application/json')
-    res.end(
-      JSON.stringify({
-        error: 'hls proxy failed',
-        detail: error instanceof Error ? error.message : String(error),
-      }),
-    )
-  }
+  res.setHeader('cache-control', isImage ? 'public, max-age=1800' : 'private, no-store')
+  res.setHeader('access-control-allow-origin', '*')
+  res.end(result.body)
 }
