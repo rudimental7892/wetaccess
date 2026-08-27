@@ -156,6 +156,34 @@ function DiscoverTab() {
         </div>
       ) : null}
 
+      <div className="mb-5 p-5 rounded-xl border border-[#f59e0b]/25 bg-[#f59e0b]/[0.04]">
+        <h3 className="m-0 mb-1 text-xs font-bold tracking-[0.08em] uppercase text-[#fbbf24]">
+          Trending Creators (Authenticated)
+        </h3>
+        <p className="m-0 mb-3 text-muted text-[13px]">
+          Real creator listings from /discover — requires login. Categories: All, Music, NSFW, Fitness, Lifestyle, Education, Photography, Art, Comedy.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+          {TRENDING_CREATORS.map((c) => (
+            <a
+              key={c.username}
+              href={`https://switcity.com/creators/${c.username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 p-3 rounded-lg border border-border bg-card hover:border-[#f59e0b]/30 transition-all"
+            >
+              <span className="shrink-0 w-8 h-8 rounded-full grid place-items-center text-xs font-bold text-white bg-gradient-to-br from-purple-600 to-purple-900">
+                {c.username[0].toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <p className="m-0 text-[13px] font-semibold text-foreground truncate">@{c.username}</p>
+                <p className="m-0 text-[11px] text-muted">{c.followers} fol · {c.subs} subs</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+
       {!loading && pages ? (
         <div className="grid gap-3">
           {Object.entries(pages).map(([path, info]) => (
@@ -188,6 +216,17 @@ function DiscoverTab() {
     </>
   )
 }
+
+const TRENDING_CREATORS = [
+  { username: 'cheffingking', followers: 2291, subs: 952, name: 'Jonadab Elezua' },
+  { username: 'lucyfamorningstar', followers: 419, subs: 40, name: 'DANIEL ODIH' },
+  { username: 'bursbarbie', followers: 276, subs: 4, name: 'Pretty Xoxo' },
+  { username: 'splashqueen', followers: 239, subs: 14, name: 'Splash Queen' },
+  { username: 'juicymimi', followers: 210, subs: 0, name: 'Juicy Mimi' },
+  { username: 'blackpuzzy', followers: 190, subs: 5, name: 'Black Puzzy' },
+  { username: 'nyashlord', followers: 25, subs: 0, name: 'CURE KONJI' },
+  { username: 'enyiinwa', followers: 7, subs: 0, name: 'Barbie Lilly' },
+]
 
 function HealthTab() {
   const [health, setHealth] = useState<ScHealthCheck | null>(null)
@@ -369,7 +408,8 @@ function InfoTab() {
           <InfoRow label="Database" value="Relational (10-conn pool)" />
           <InfoRow label="Cache" value="Redis (7 namespaces)" />
           <InfoRow label="Real-time" value="Socket.IO" />
-          <InfoRow label="Media" value="Google Cloud Platform" />
+          <InfoRow label="Video CDN" value="Cloudflare Stream (RS256 JWT)" />
+          <InfoRow label="Object Store" value="Contabo S3 (usc1.contabostorage.com)" />
           <InfoRow label="Moderation" value="Google Cloud Vision API" />
         </InfoCard>
 
@@ -394,14 +434,36 @@ function InfoTab() {
         </InfoCard>
 
         <InfoCard title="Security Issues" danger>
+          <InfoRow label="CRITICAL" value="/search leaks PII for 1,032+ users (no auth)" warn />
+          <InfoRow label="CRITICAL" value="/creators/*/posts returns all posts (no auth)" warn />
+          <InfoRow label="CRITICAL" value="/discover/trending leaks creator real names" warn />
           <InfoRow label="CRITICAL" value="/health exposes DB + Redis metrics" warn />
           <InfoRow label="CRITICAL" value="/earnings leaks usernames + bank info" warn />
+          <InfoRow label="HIGH" value="Full user DB enumerable via search pagination" warn />
+          <InfoRow label="HIGH" value="Phone numbers used as usernames (PII)" warn />
+          <InfoRow label="HIGH" value="Free video URLs served without any auth" warn />
           <InfoRow label="HIGH" value="JWT in localStorage (XSS risk)" warn />
           <InfoRow label="HIGH" value="Server-Timing header leaks DB timing" warn />
           <InfoRow label="HIGH" value="No CSP/HSTS on frontend" warn />
+          <InfoRow label="HIGH" value="Settings > Privacy & safety → 404" warn />
           <InfoRow label="MEDIUM" value="nginx version disclosure (CVEs)" warn />
           <InfoRow label="MEDIUM" value="Unauthenticated Socket.IO" warn />
+          <InfoRow label="MEDIUM" value="Username enumeration via availability check" warn />
+          <InfoRow label="MEDIUM" value="No rate limiting on API endpoints" warn />
           <InfoRow label="MEDIUM" value="Checkbox-only age verification" />
+        </InfoCard>
+
+        <InfoCard title="Authenticated Features">
+          <InfoRow label="Feed" value="Instagram-style with Stories" />
+          <InfoRow label="Video Feed" value="TikTok-style vertical scroll (NSFW)" />
+          <InfoRow label="Discover" value="Creator grid with category filters" />
+          <InfoRow label="Messages" value="DMs (requires subscription)" />
+          <InfoRow label="Video Calls" value="1-on-1 calls with creators" />
+          <InfoRow label="Wallet" value="₦ balance, fund, spend, transactions" />
+          <InfoRow label="Tips" value="Tip creators on posts/videos" />
+          <InfoRow label="Subscriptions" value="Monthly plans per creator" />
+          <InfoRow label="Notifications" value="Likes, Comments, Subscriptions" />
+          <InfoRow label="Content" value="Free + Paid posts, Videos, Photos" />
         </InfoCard>
 
         <InfoCard title="Public Surface">
@@ -416,6 +478,15 @@ function InfoTab() {
           <InfoRow label="GET /health" value="DB + Redis metrics (no auth)" warn />
         </InfoCard>
 
+        <InfoCard title="Creator Profiles">
+          <InfoRow label="Pricing" value="₦10,000/month (juicymimi sample)" />
+          <InfoRow label="Stats" value="Followers, Subscribers, Posts" />
+          <InfoRow label="Content tabs" value="All, Free, Paid, Videos, Photos" />
+          <InfoRow label="Actions" value="Follow, Subscribe, Call, Share" />
+          <InfoRow label="Watermark" value="SWITCITY on all videos" />
+          <InfoRow label="Discovery" value="12 trending creators found" />
+        </InfoCard>
+
         <InfoCard title="Cache Namespaces">
           <InfoRow label="demo" value="Highest hit count — shared prod DB?" warn />
           <InfoRow label="signup" value="User registration cache" />
@@ -424,6 +495,94 @@ function InfoTab() {
           <InfoRow label="discover" value="Browse/discover data" />
           <InfoRow label="platform-settings" value="Global config" />
           <InfoRow label="content-rules" value="Moderation rules" />
+        </InfoCard>
+      </div>
+
+      <h2 className="mt-8 mb-4 text-xs font-bold tracking-[0.14em] uppercase text-[#f59e0b]">
+        Deep Dive: API Security Audit
+      </h2>
+      <div className="grid md:grid-cols-2 gap-4">
+        <InfoCard title="Unauthenticated API Endpoints" danger>
+          <InfoRow label="/search?q=*" value="60 users/page, full PII, 1,032 total" warn />
+          <InfoRow label="/discover/trending" value="24 creators with real names" warn />
+          <InfoRow label="/creators/*/posts" value="All posts + free media URLs" warn />
+          <InfoRow label="/posts/{uuid}" value="Individual post data" warn />
+          <InfoRow label="/health" value="DB pool + Redis cache metrics" warn />
+          <InfoRow label="No rate limiting" value="10 pages in &lt;2s, no 429" warn />
+        </InfoCard>
+
+        <InfoCard title="Protected Endpoints (Auth Required)">
+          <InfoRow label="/users/me" value="401 Unauthorized" />
+          <InfoRow label="/notifications" value="401 Unauthorized" />
+          <InfoRow label="/messages" value="401 Unauthorized" />
+          <InfoRow label="/wallet/balance" value="401 Unauthorized" />
+          <InfoRow label="/wallet/transactions" value="401 Unauthorized" />
+          <InfoRow label="/subscriptions" value="401 Unauthorized" />
+          <InfoRow label="/creators/*/subscribers" value="401 Unauthorized" />
+          <InfoRow label="/creators/*/followers" value="401 Unauthorized" />
+        </InfoCard>
+
+        <InfoCard title="User Enumeration (Mass PII Leak)" danger>
+          <InfoRow label="Vector" value="/search?q={letter}&page={n}" warn />
+          <InfoRow label="Total users" value="~1,032 (meta count for q=a)" warn />
+          <InfoRow label="Per page" value="60 results, unlimited pagination" warn />
+          <InfoRow label="Fields leaked" value="firstName, lastName, gender, bio, UUID" warn />
+          <InfoRow label="Phone as username" value="07034743761, 0970655618" warn />
+          <InfoRow label="Real names found" value="Chiemeka ogonusegeni, James Sichinsambwe" warn />
+          <InfoRow label="Coverage" value="5 vowels cover 576-1,032 matches each" warn />
+        </InfoCard>
+
+        <InfoCard title="Content Protection: bursbarbie">
+          <InfoRow label="Total posts" value="20 returned (23 actual)" />
+          <InfoRow label="Locked posts" value="7 (6 PPV + 1 subscription-only)" />
+          <InfoRow label="Free posts" value="13 with full Cloudflare URLs" />
+          <InfoRow label="Locked video URLs" value="NEVER leaked (hasUrl=false)" />
+          <InfoRow label="Locked thumbnails" value="5/7 LEAKED as signed S3 URLs (200 OK)" warn />
+          <InfoRow label="Thumbnail fetch" value="72KB JPEG, 666x556px, fully accessible" warn />
+          <InfoRow label="Locked media keys" value="thumbnailUrl, type, blurHash, watermark" />
+          <InfoRow label="PPV price" value="₦2,000 per post" />
+        </InfoCard>
+
+        <InfoCard title="Playback URL Endpoint (Deep Test)">
+          <InfoRow label="POST /media/stream/playback-url" value="Generates signed video JWTs" />
+          <InfoRow label="No auth" value="401 Unauthorized" />
+          <InfoRow label="Auth, no purchase" value="403 Purchase required" />
+          <InfoRow label="Auth, no sub" value="403 Subscription required" />
+          <InfoRow label="PPV posts (5)" value="All return 403 Purchase required" />
+          <InfoRow label="Sub post (1)" value="Returns 403 Subscription required" />
+          <InfoRow label="Cross-creator" value="splashqueen also 403" />
+          <InfoRow label="Verdict" value="Server-side paywall WORKS" />
+        </InfoCard>
+
+        <InfoCard title="JS Bundle Analysis (Client Code)">
+          <InfoRow label="White-label" value="Ndloo fork (ndloo_ localStorage keys)" warn />
+          <InfoRow label="Auth storage" value="ndloo_token in localStorage (XSS risk)" warn />
+          <InfoRow label="API client" value="axios → api.switcity.com" />
+          <InfoRow label="Video player" value="hls.js + Cloudflare Stream HLS" />
+          <InfoRow label="Token refresh" value="playbackRefresh → POST /media/stream/*" />
+          <InfoRow label="Refresh body" value="{type, postId, mediaOrder}" />
+          <InfoRow label="PPV purchase" value="POST /ppv/posts/{id}/purchase" />
+          <InfoRow label="Wallet check" value="Client-side only (server also validates)" />
+        </InfoCard>
+
+        <InfoCard title="Cross-Creator Verification">
+          <InfoRow label="juicymimi" value="13 posts, 3 locked, 10 with URLs" />
+          <InfoRow label="splashqueen" value="20 posts, 11 locked, 9 with URLs" />
+          <InfoRow label="blackpuzzy" value="20 posts, 17 locked, 3 with URLs" />
+          <InfoRow label="Pattern" value="Locked posts consistently omit video URLs" />
+          <InfoRow label="Thumbnails" value="Locked video thumbs LEAKED in list API" warn />
+          <InfoRow label="Free content" value="URLs served to any visitor (no auth)" warn />
+        </InfoCard>
+
+        <InfoCard title="Video Delivery Infrastructure">
+          <InfoRow label="Provider" value="Cloudflare Stream (videodelivery.net)" />
+          <InfoRow label="JWT signing" value="RS256 with ~1hr expiry" />
+          <InfoRow label="Key ID (kid)" value="7baca112d73a733fd71678fb96c1f9f0" />
+          <InfoRow label="JWT sub" value="= Cloudflare Stream video ID" />
+          <InfoRow label="Direct access" value="401 without valid signed JWT" />
+          <InfoRow label="S3 credential" value="e978e1d914458321aad1ae2e69b61e2d" />
+          <InfoRow label="S3 bucket" value="switcity-media (avatars, thumbs, posts)" />
+          <InfoRow label="Unsigned S3" value="Returns 401 (properly protected)" />
         </InfoCard>
       </div>
     </>
