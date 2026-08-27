@@ -2418,32 +2418,41 @@ body.modal-open {
   overflow: visible;
   flex-shrink: 0;
 }
-.fb-creator-avatar > img,
-.fb-creator-avatar > span {
+.fb-creator-avatar > img {
   width: 72px;
   height: 72px;
   border-radius: 50%;
   object-fit: cover;
+  background: #1f2937;
+}
+.fb-creator-avatar > span:first-child {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  background: #1f2937;
+  background: linear-gradient(135deg, #1e3a4a, #0d2835);
+  border: 2px solid rgba(255, 255, 255, 0.08);
   font-weight: 700;
-  font-size: 1.4rem;
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
 }
 .fb-creator-verified {
   position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 22px;
-  height: 22px;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #0d9488;
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   display: grid;
   place-items: center;
   border: 2px solid #111116;
+  pointer-events: none;
 }
 
 .fb-creator-info {

@@ -248,8 +248,8 @@ export function AfricanCastingView({
           </>
         ) : (
           <>
-        {/* Hero */}
-        <section className="ac-hero">
+            {/* Hero */}
+            <section className="ac-hero">
           <p className="ac-hero-eyebrow">Video catalog</p>
           <h1 className="ac-hero-title">African Casting</h1>
           <p className="ac-hero-sub">
