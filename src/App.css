@@ -2064,6 +2064,34 @@ body.modal-open {
   text-decoration: none;
 }
 
+@media (max-width: 639px) {
+  .fb-app .app-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .fb-app .app-nav-start {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+  .fb-app .app-nav-tabs {
+    flex: 1;
+    justify-content: center;
+  }
+  .fb-app .nav-tab {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .fb-app .app-nav-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+  .fb-app .app-nav-actions .nav-pill {
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+}
+
 .fb-page {
   padding: 18px;
   max-width: 1140px;
