@@ -27,7 +27,7 @@ import {
 } from './lib/session'
 import { WatchView } from './components/WatchView'
 import { useFavorites } from './lib/favorites'
-import { wet3AssetUrl, placeholderImage } from './lib/wet3'
+import { placeholderImage } from './lib/wet3'
 
 type AppRoute =
   | { view: 'creators' }

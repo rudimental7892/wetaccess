@@ -906,10 +906,6 @@ function UsersList({
     filters.q.trim() ? `“${filters.q.trim()}”` : null,
   ].filter(Boolean)
 
-  const statsLine = stats
-    ? `${(stats.total ?? 0).toLocaleString()} accounts · ${(stats.creators ?? 0).toLocaleString()} creators · ${(stats.fans ?? 0).toLocaleString()} fans`
-    : 'Guest API catalog'
-
   const sorted = useMemo(() => sortUsers(scanMode ? scanSlice : users, sortKey), [scanMode, scanSlice, users, sortKey])
 
   return (
