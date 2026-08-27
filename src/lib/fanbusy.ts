@@ -157,7 +157,7 @@ export async function fetchFbStats(): Promise<FbStats> {
 
 export async function fetchFbUsers(
   page: number,
-  size = 10,
+  size = 20,
 ): Promise<{ users: FbCreator[]; pageInfo: FbPaginate }> {
   const body = await fbGet<FbCreator[]>('creators/', { page, size })
   return {
@@ -192,23 +192,23 @@ export async function fetchFbPosts(
 export async function fetchFbPostsByCreator(
   creatorId: string,
 ): Promise<FbPost[]> {
-  // Guest-accessible. `/posts/creator/optimised/{id}` requires auth (401).
   const path = `posts/creator/${encodeURIComponent(creatorId)}`
   const limit = 50
-  const all: FbPost[] = []
-  let skip = 1
-  let lastPage = 1
+  const first = await fbGet<FbPost[]>(path, { skip: 1, limit })
+  const firstRows = Array.isArray(first.data) ? first.data : []
+  const lastPage = Math.max(1, first.paginage?.last_page ?? 1)
+  if (lastPage <= 1) return firstRows
 
-  while (skip <= lastPage) {
-    const body = await fbGet<FbPost[]>(path, { skip, limit })
+  const rest = await Promise.all(
+    Array.from({ length: Math.min(lastPage - 1, 99) }, (_, i) =>
+      fbGet<FbPost[]>(path, { skip: i + 2, limit }),
+    ),
+  )
+  const all = [...firstRows]
+  for (const body of rest) {
     const rows = Array.isArray(body.data) ? body.data : []
     all.push(...rows)
-    lastPage = Math.max(1, body.paginage?.last_page ?? skip)
-    if (!rows.length) break
-    skip += 1
-    if (skip > 100) break
   }
-
   return all
 }
 

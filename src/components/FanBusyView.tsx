@@ -748,7 +748,7 @@ function UsersList({
     setLoading(true)
     setError('')
     try {
-      const { users: rows, pageInfo: info } = await fetchFbUsers(p, 10)
+      const { users: rows, pageInfo: info } = await fetchFbUsers(p, 20)
       setUsers(rows)
       setPageInfo(info)
     } catch (e) {
@@ -797,40 +797,45 @@ function UsersList({
         ? stats?.creators ?? null
         : null
 
+    const SCAN_SIZE = 50
+    const PARALLEL = 3
     void (async () => {
       try {
         let p = 1
         let last = 1
         let total = 0
         while (!stopRef.current) {
-          const { users: rows, pageInfo: info } = await fetchFbUsers(p, 10)
-          last = info.last_page ?? p
-          total = info.total ?? total
-          setScanTotal(total)
-          setScanLastPage(last)
-          setScanPage(p)
+          const batch = Array.from(
+            { length: Math.min(PARALLEL, last - p + 1) },
+            (_, i) => fetchFbUsers(p + i, SCAN_SIZE),
+          )
+          const results = await Promise.all(batch)
 
-          const next: FbCreator[] = []
-          for (const u of rows) {
-            if (seen.has(u._id)) continue
-            if (!matchesUserFilters(u, f)) continue
-            seen.add(u._id)
-            next.push(u)
-          }
-          if (next.length) {
-            setScanMatches((prev) => [...prev, ...next])
+          for (let i = 0; i < results.length; i++) {
+            const { users: rows, pageInfo: info } = results[i]
+            last = Math.max(last, info.last_page ?? (p + i))
+            total = info.total ?? total
+            setScanTotal(total)
+            setScanLastPage(last)
+            setScanPage(p + i)
+
+            const next: FbCreator[] = []
+            for (const u of rows) {
+              if (seen.has(u._id)) continue
+              if (!matchesUserFilters(u, f)) continue
+              seen.add(u._id)
+              next.push(u)
+            }
+            if (next.length) {
+              setScanMatches((prev) => [...prev, ...next])
+            }
           }
 
-          if (
-            creatorTarget != null &&
-            seen.size >= creatorTarget
-          ) {
-            break
-          }
+          if (creatorTarget != null && seen.size >= creatorTarget) break
 
-          if (p >= last) break
-          p += 1
-          await new Promise((r) => setTimeout(r, 30))
+          p += results.length
+          if (p > last) break
+          await new Promise((r) => setTimeout(r, 20))
         }
       } catch (e) {
         if (!stopRef.current) {
