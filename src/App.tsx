@@ -8,7 +8,6 @@ import { AfricanCastingView } from './components/AfricanCastingView'
 import { FanBusyView } from './components/FanBusyView'
 import { FanTribeView } from './components/FanTribeView'
 import { LeakedZoneView } from './components/LeakedZoneView'
-import { SwitCityView } from './components/SwitCityView'
 import { AppShell } from './components/AppShell'
 import { CreatorsView } from './components/CreatorsView'
 import { ProfileView } from './components/ProfileView'
@@ -180,15 +179,6 @@ function App() {
   if (session.site === 'leakedzone') {
     return (
       <LeakedZoneView
-        onSwitchSite={handleSwitchSite}
-        onLogout={handleLogout}
-      />
-    )
-  }
-
-  if (session.site === 'switcity') {
-    return (
-      <SwitCityView
         onSwitchSite={handleSwitchSite}
         onLogout={handleLogout}
       />

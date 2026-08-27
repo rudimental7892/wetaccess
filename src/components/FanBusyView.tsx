@@ -677,47 +677,55 @@ function PostCard({
   )
 }
 
-function UserRow({ user }: { user: FbCreator }) {
+function CreatorCard({ user }: { user: FbCreator }) {
   const avatar = fbAvatar(user)
-  const leakBits = [
-    hasEmail(user) ? 'email' : null,
-    hasPhone(user) ? 'phone' : null,
-    user.full_name ? 'name' : null,
-  ].filter(Boolean)
+  const isCreator = (user.account_type || '').toUpperCase() === 'CREATOR'
+  const fans = user.fan_number ?? 0
+  const likes = user.like_number ?? 0
+  const fee = user.subscription_fee ?? 0
 
   return (
-    <a className="fb-user-card link" href={userHref(user)}>
-      <div className="fb-user-avatar">
+    <a className="fb-creator-card" href={userHref(user)}>
+      <div className="fb-creator-avatar">
         {avatar ? (
           <img src={avatar} alt="" loading="lazy" />
         ) : (
           <span>{(user.display_name || user.pseudo || '?').slice(0, 1)}</span>
         )}
+        {user.verified ? <span className="fb-creator-verified" title="Verified">✓</span> : null}
       </div>
-      <div className="fb-user-meta">
-        <strong>{user.display_name || user.pseudo || user._id}</strong>
-        <span className="fb-user-sub">
-          @{user.pseudo || '—'} · {accountLabel(user.account_type)}
-          {user.city ? ` · ${user.city}` : ''}
-        </span>
-        <span className="fb-user-leak">
-          {[user.email, user.phone_number, user.full_name]
-            .filter(Boolean)
-            .join(' · ') || 'no contact fields'}
-        </span>
+      <div className="fb-creator-info">
+        <strong className="fb-creator-name">
+          {user.display_name || user.pseudo || user._id}
+        </strong>
+        <span className="fb-creator-handle">@{user.pseudo || '—'}</span>
+        <div className="fb-creator-stats">
+          <span title="Fans">{fans.toLocaleString()} fans</span>
+          <span title="Likes">{likes.toLocaleString()} likes</span>
+        </div>
       </div>
-      <div className="fb-user-flags">
-        {user.verified ? <span className="fb-pill ok">verified</span> : null}
-        {hasHash(user) ? <span className="fb-pill danger">hash</span> : null}
-        {hasKyc(user) ? <span className="fb-pill warn">KYC</span> : null}
-        {isPaidCreator(user) ? <span className="fb-pill warn">paid</span> : null}
-        {leakBits.length ? (
-          <span className="fb-pill danger">{leakBits.join(' · ')}</span>
-        ) : null}
-        <span className="fb-open-hint">Open →</span>
+      <div className="fb-creator-foot">
+        {isCreator && fee > 0 ? (
+          <span className="fb-creator-price">{fbFormatMoney(fee, user.currency)}/mo</span>
+        ) : isCreator && user.is_free_account ? (
+          <span className="fb-creator-free">Free</span>
+        ) : (
+          <span className="fb-creator-type">{accountLabel(user.account_type)}</span>
+        )}
       </div>
     </a>
   )
+}
+
+type SortKey = 'default' | 'fans' | 'likes' | 'name'
+
+function sortUsers(list: FbCreator[], sort: SortKey): FbCreator[] {
+  if (sort === 'default') return list
+  const copy = [...list]
+  if (sort === 'fans') copy.sort((a, b) => (b.fan_number ?? 0) - (a.fan_number ?? 0))
+  if (sort === 'likes') copy.sort((a, b) => (b.like_number ?? 0) - (a.like_number ?? 0))
+  if (sort === 'name') copy.sort((a, b) => (a.display_name || a.pseudo || '').localeCompare(b.display_name || b.pseudo || ''))
+  return copy
 }
 
 function UsersList({
@@ -734,6 +742,7 @@ function UsersList({
   const [pageInfo, setPageInfo] = useState<FbPaginate>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('default')
 
   const [scanMatches, setScanMatches] = useState<FbCreator[]>([])
   const [scanPage, setScanPage] = useState(0)
@@ -798,44 +807,53 @@ function UsersList({
         : null
 
     const SCAN_SIZE = 50
-    const PARALLEL = 3
+    const PARALLEL = 2
     void (async () => {
       try {
         let p = 1
         let last = 1
         let total = 0
+        let retries = 0
         while (!stopRef.current) {
-          const batch = Array.from(
-            { length: Math.min(PARALLEL, last - p + 1) },
-            (_, i) => fetchFbUsers(p + i, SCAN_SIZE),
-          )
-          const results = await Promise.all(batch)
+          try {
+            const batchSize = Math.min(PARALLEL, last - p + 1)
+            const batch = Array.from(
+              { length: batchSize },
+              (_, i) => fetchFbUsers(p + i, SCAN_SIZE),
+            )
+            const results = await Promise.all(batch)
+            retries = 0
 
-          for (let i = 0; i < results.length; i++) {
-            const { users: rows, pageInfo: info } = results[i]
-            last = Math.max(last, info.last_page ?? (p + i))
-            total = info.total ?? total
-            setScanTotal(total)
-            setScanLastPage(last)
-            setScanPage(p + i)
+            for (let i = 0; i < results.length; i++) {
+              const { users: rows, pageInfo: info } = results[i]
+              last = Math.max(last, info.last_page ?? (p + i))
+              total = info.total ?? total
+              setScanTotal(total)
+              setScanLastPage(last)
+              setScanPage(p + i)
 
-            const next: FbCreator[] = []
-            for (const u of rows) {
-              if (seen.has(u._id)) continue
-              if (!matchesUserFilters(u, f)) continue
-              seen.add(u._id)
-              next.push(u)
+              const next: FbCreator[] = []
+              for (const u of rows) {
+                if (seen.has(u._id)) continue
+                if (!matchesUserFilters(u, f)) continue
+                seen.add(u._id)
+                next.push(u)
+              }
+              if (next.length) {
+                setScanMatches((prev) => [...prev, ...next])
+              }
             }
-            if (next.length) {
-              setScanMatches((prev) => [...prev, ...next])
-            }
+
+            if (creatorTarget != null && seen.size >= creatorTarget) break
+
+            p += results.length
+            if (p > last) break
+            await new Promise((r) => setTimeout(r, 30))
+          } catch (batchErr) {
+            retries++
+            if (retries > 3) throw batchErr
+            await new Promise((r) => setTimeout(r, 1000 * retries))
           }
-
-          if (creatorTarget != null && seen.size >= creatorTarget) break
-
-          p += results.length
-          if (p > last) break
-          await new Promise((r) => setTimeout(r, 20))
         }
       } catch (e) {
         if (!stopRef.current) {
@@ -892,75 +910,46 @@ function UsersList({
     ? `${(stats.total ?? 0).toLocaleString()} accounts · ${(stats.creators ?? 0).toLocaleString()} creators · ${(stats.fans ?? 0).toLocaleString()} fans`
     : 'Guest API catalog'
 
+  const sorted = useMemo(() => sortUsers(scanMode ? scanSlice : users, sortKey), [scanMode, scanSlice, users, sortKey])
+
   return (
     <div className="fb-main">
       {/* Hero */}
       <section className="fb-hero">
         <div className="fb-hero-top">
           <div>
-            <p className="fb-hero-eyebrow">Guest API catalog</p>
-            <h1 className="fb-title">Users</h1>
+            <p className="fb-hero-eyebrow">Discover</p>
+            <h1 className="fb-title">Creators</h1>
             <p className="fb-hero-sub">
               {stats
-                ? `${(stats.total ?? 0).toLocaleString()} accounts · Page ${pageInfo.current_page ?? page}`
-                : 'Loading catalog...'}
+                ? `${(stats.creators ?? 0).toLocaleString()} creators · ${(stats.fans ?? 0).toLocaleString()} fans`
+                : 'Loading…'}
             </p>
           </div>
-          {!scanMode ? (
-            <button
-              type="button"
-              className="nav-pill"
-              onClick={() => void loadPage(page)}
-              disabled={loading}
-            >
-              Reload page
-            </button>
-          ) : scanning ? (
-            <button
-              type="button"
-              className="nav-pill"
-              onClick={() => {
-                stopRef.current = true
-                setScanning(false)
-                setScanDone(true)
-              }}
-            >
-              Stop scan
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="nav-pill"
-              onClick={() => setFilters({ ...filters })}
-            >
-              Rescan
-            </button>
-          )}
-        </div>
-        {stats ? (
-          <div className="fb-stat-cards">
-            <div className="fb-stat-card">
-              <span className="fb-stat-value">{(stats.creators ?? 0).toLocaleString()}</span>
-              <span className="fb-stat-label">Creators</span>
-            </div>
-            <div className="fb-stat-card">
-              <span className="fb-stat-value">{(stats.fans ?? 0).toLocaleString()}</span>
-              <span className="fb-stat-label">Fans</span>
-            </div>
-            <div className="fb-stat-card">
-              <span className="fb-stat-value">{(stats.total ?? 0).toLocaleString()}</span>
-              <span className="fb-stat-label">Total</span>
-            </div>
+          <div className="fb-hero-actions">
+            {scanning ? (
+              <button
+                type="button"
+                className="nav-pill"
+                onClick={() => {
+                  stopRef.current = true
+                  setScanning(false)
+                  setScanDone(true)
+                }}
+              >
+                Stop scan
+              </button>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </section>
 
-      <div className="fb-filters">
+      <div className="fb-toolbar">
         <label className="fb-search">
           <span className="fb-sr">Search</span>
           <input
             type="search"
-            placeholder="Search name, @handle, email, phone, city…"
+            placeholder="Search creators…"
             defaultValue={filters.q}
             key={`q-${filters.q}`}
             onKeyDown={(e) => {
@@ -977,54 +966,60 @@ function UsersList({
           />
         </label>
 
-        <div className="fb-chip-row" role="group" aria-label="Account type">
-          {(
-            [
-              ['all', 'All'],
-              ['CREATOR', 'Creators'],
-              ['FANS', 'Fans'],
-            ] as const
-          ).map(([value, label]) => (
+        <div className="fb-toolbar-row">
+          <div className="fb-chip-row" role="group" aria-label="Account type">
+            {(
+              [
+                ['all', 'All'],
+                ['CREATOR', 'Creators'],
+                ['FANS', 'Fans'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`fb-chip${filters.type === value ? ' active' : ''}`}
+                onClick={() => setType(value)}
+              >
+                {label}
+              </button>
+            ))}
             <button
-              key={value}
               type="button"
-              className={`fb-chip${filters.type === value ? ' active' : ''}`}
-              onClick={() => setType(value)}
+              className={`fb-chip${filters.verified ? ' active' : ''}`}
+              onClick={() => toggleChip('verified')}
             >
-              {label}
+              Verified
             </button>
-          ))}
-        </div>
+            <button
+              type="button"
+              className={`fb-chip${filters.paid ? ' active' : ''}`}
+              onClick={() => toggleChip('paid')}
+            >
+              Paid
+            </button>
+            {activeChips.length ? (
+              <button
+                type="button"
+                className="fb-chip clear"
+                onClick={() => setFilters(DEFAULT_USER_FILTERS)}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
 
-        <div className="fb-chip-row" role="group" aria-label="Leak filters">
-          {(
-            [
-              ['verified', 'Verified'],
-              ['kyc', 'Has KYC'],
-              ['hash', 'Has hash'],
-              ['email', 'Has email'],
-              ['phone', 'Has phone'],
-              ['paid', 'Paid creator'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={`fb-chip${filters[key] ? ' active danger' : ''}`}
-              onClick={() => toggleChip(key)}
+          <label className="fb-sort">
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
             >
-              {label}
-            </button>
-          ))}
-          {activeChips.length ? (
-            <button
-              type="button"
-              className="fb-chip clear"
-              onClick={() => setFilters(DEFAULT_USER_FILTERS)}
-            >
-              Clear filters
-            </button>
-          ) : null}
+              <option value="default">Default order</option>
+              <option value="fans">Most fans</option>
+              <option value="likes">Most likes</option>
+              <option value="name">Name A–Z</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -1076,120 +1071,76 @@ function UsersList({
         </div>
       ) : null}
 
-      {scanMode ? (
-        <>
-          {scanning && scanMatches.length === 0 ? (
-            <div className="fb-user-list">
-              {Array.from({ length: 6 }, (_, i) => (
-                <div key={`skel-${i}`} className="fb-user-skeleton">
-                  <div className="fb-user-skeleton-avatar" />
-                  <div className="fb-user-skeleton-body">
-                    <div className="fb-user-skeleton-line wide" />
-                    <div className="fb-user-skeleton-line narrow" />
-                  </div>
-                </div>
-              ))}
+      {(scanMode ? (scanning && scanMatches.length === 0) : loading) ? (
+        <div className="fb-creator-grid">
+          {Array.from({ length: 12 }, (_, i) => (
+            <div key={`skel-${i}`} className="fb-creator-skeleton">
+              <div className="fb-creator-skeleton-avatar" />
+              <div className="fb-creator-skeleton-lines">
+                <div className="fb-skel-line wide" />
+                <div className="fb-skel-line narrow" />
+                <div className="fb-skel-line medium" />
+              </div>
             </div>
-          ) : scanSlice.length === 0 ? (
-            <p className="fb-empty">
-              No matches yet
-              {scanning ? ' — still scanning' : ''}.
-            </p>
-          ) : (
-            <div className="fb-user-list">
-              {scanSlice.map((u) => (
-                <UserRow key={u._id} user={u} />
-              ))}
-            </div>
-          )}
-          {scanMatches.length > listPageSize ? (
-            <div className="fb-pager">
-              <button
-                type="button"
-                disabled={safeScanPage <= 1}
-                onClick={() => {
-                  window.location.hash = buildUsersHash(
-                    filters,
-                    Math.max(1, safeScanPage - 1),
-                  )
-                }}
-              >
-                Prev
-              </button>
-              <span>
-                Page {safeScanPage} / {scanPageCount} ·{' '}
-                {scanMatches.length.toLocaleString()} matches
-              </span>
-              <button
-                type="button"
-                disabled={safeScanPage >= scanPageCount}
-                onClick={() => {
-                  window.location.hash = buildUsersHash(
-                    filters,
-                    safeScanPage + 1,
-                  )
-                }}
-              >
-                Next
-              </button>
-            </div>
-          ) : null}
-        </>
+          ))}
+        </div>
+      ) : sorted.length === 0 ? (
+        <p className="fb-empty">
+          {scanMode && scanning ? 'Scanning — no matches yet.' : 'No creators found.'}
+        </p>
       ) : (
-        <>
-          {loading ? (
-            <div className="fb-user-list">
-              {Array.from({ length: 8 }, (_, i) => (
-                <div key={`skel-${i}`} className="fb-user-skeleton">
-                  <div className="fb-user-skeleton-avatar" />
-                  <div className="fb-user-skeleton-body">
-                    <div className="fb-user-skeleton-line wide" />
-                    <div className="fb-user-skeleton-line narrow" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : users.length === 0 ? (
-            <p className="fb-empty">No users on this page.</p>
-          ) : (
-            <div className="fb-user-list">
-              {users.map((u) => (
-                <UserRow key={u._id} user={u} />
-              ))}
-            </div>
-          )}
-          <div className="fb-pager">
-            <button
-              type="button"
-              disabled={page <= 1 || loading}
-              onClick={() => {
-                window.location.hash = buildUsersHash(filters, page - 1)
-              }}
-            >
-              Prev
-            </button>
-            <span>
-              Page {pageInfo.current_page ?? page} / {lastPage}
-              {pageInfo.total != null
-                ? ` · ${pageInfo.total.toLocaleString()} total`
-                : ''}
-            </span>
-            <button
-              type="button"
-              disabled={page >= lastPage || loading}
-              onClick={() => {
-                window.location.hash = buildUsersHash(filters, page + 1)
-              }}
-            >
-              Next
-            </button>
-          </div>
-          <p className="fb-hint">
-            Tip: turn on Creators, KYC, Hash, Email, or search to scan the
-            catalog for matches. Click a row to open the full profile page.
-          </p>
-        </>
+        <div className="fb-creator-grid">
+          {sorted.map((u) => (
+            <CreatorCard key={u._id} user={u} />
+          ))}
+        </div>
       )}
+
+      {scanMode && scanMatches.length > listPageSize ? (
+        <div className="fb-pager">
+          <button
+            type="button"
+            disabled={safeScanPage <= 1}
+            onClick={() => {
+              window.location.hash = buildUsersHash(filters, Math.max(1, safeScanPage - 1))
+            }}
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {safeScanPage} / {scanPageCount} · {scanMatches.length.toLocaleString()} matches
+          </span>
+          <button
+            type="button"
+            disabled={safeScanPage >= scanPageCount}
+            onClick={() => {
+              window.location.hash = buildUsersHash(filters, safeScanPage + 1)
+            }}
+          >
+            Next →
+          </button>
+        </div>
+      ) : !scanMode ? (
+        <div className="fb-pager">
+          <button
+            type="button"
+            disabled={page <= 1 || loading}
+            onClick={() => { window.location.hash = buildUsersHash(filters, page - 1) }}
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {pageInfo.current_page ?? page} / {lastPage}
+          </span>
+          <button
+            type="button"
+            disabled={page >= lastPage || loading}
+            onClick={() => { window.location.hash = buildUsersHash(filters, page + 1) }}
+          >
+            Next →
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1777,13 +1728,13 @@ export function FanBusyView({ onSwitchSite, onLogout }: FanBusyViewProps) {
               href="#/users"
               className={`nav-tab${tab === 'users' && route.view !== 'user' ? ' active' : ''}`}
             >
-              Users
+              Creators
             </a>
             <a
               href="#/posts"
               className={`nav-tab${route.view === 'posts' ? ' active' : ''}`}
             >
-              Posts
+              Feed
             </a>
             <a
               href="#/favorites"

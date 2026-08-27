@@ -4,7 +4,6 @@ export type AppSite =
   | 'fanbusy'
   | 'fantribe'
   | 'leakedzone'
-  | 'switcity'
 
 export type SessionState = {
   loggedIn: boolean
@@ -33,8 +32,7 @@ export function readSession(): SessionState {
         parsed.site === 'africancasting' ||
         parsed.site === 'fanbusy' ||
         parsed.site === 'fantribe' ||
-        parsed.site === 'leakedzone' ||
-        parsed.site === 'switcity'
+        parsed.site === 'leakedzone'
           ? parsed.site
           : null,
     }
