@@ -12,6 +12,28 @@ import { obtainWet3StreamToken, streamV2UrlWithToken } from './wet3StreamToken'
 
 const WET3_ORIGIN = 'https://wet3.click'
 
+const PLAYLIST_CACHE_MAX = 500
+const PLAYLIST_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour — Bunny UUIDs are stable
+const playlistCache = new Map<string, { url: string; at: number }>()
+
+function getCachedPlaylist(mediaId: string): string | null {
+  const entry = playlistCache.get(mediaId)
+  if (!entry) return null
+  if (Date.now() - entry.at > PLAYLIST_CACHE_TTL_MS) {
+    playlistCache.delete(mediaId)
+    return null
+  }
+  return entry.url
+}
+
+function cachePlaylist(mediaId: string, url: string) {
+  playlistCache.set(mediaId, { url, at: Date.now() })
+  if (playlistCache.size > PLAYLIST_CACHE_MAX) {
+    const oldest = playlistCache.keys().next().value
+    if (oldest) playlistCache.delete(oldest)
+  }
+}
+
 /**
  * Derive Bunny CDN HLS playlist from wet3's image API.
  * `/api/image/{id}` → 303 → `https://vz-xxx.b-cdn.net/{uuid}/preview.webp`
@@ -201,27 +223,40 @@ export function createStreamRedirectMiddleware(): Connect.NextHandleFunction {
 
     void (async () => {
       try {
-        // Fast path: resolve Bunny CDN playlist directly from wet3's image API.
-        // stream-v2 is dead (always 400) so skip it to avoid wasted round-trips.
-        const playlistUrl = await resolveBunnyPlaylist(mediaId)
-        if (playlistUrl) {
-          await serveProxiedLocation(res, playlistUrl)
+        // Instant path: serve from cache (Bunny UUIDs are stable).
+        const cached = getCachedPlaylist(mediaId)
+        if (cached) {
+          await serveProxiedLocation(res, cached)
           return
         }
 
-        // Second path: some videos return 200 from /api/image (thumbnail served
-        // directly) but their player page still embeds a Bunny CDN playlist URL.
-        // Obtain the ad-completion token, then scrape the player page.
-        const st = existingSt ?? await obtainWet3StreamToken(mediaId, guestCookie)
-        if (st) {
-          const playerPlaylist = await resolvePlaylistFromPlayerPage(mediaId, st)
+        // Run Bunny fast-path and token acquisition in parallel so the
+        // monetized-link round-trips overlap with the image-API probe.
+        const [bunnyResult, tokenResult] = await Promise.all([
+          resolveBunnyPlaylist(mediaId),
+          existingSt
+            ? Promise.resolve(existingSt)
+            : obtainWet3StreamToken(mediaId, guestCookie),
+        ])
+
+        if (bunnyResult) {
+          cachePlaylist(mediaId, bunnyResult)
+          await serveProxiedLocation(res, bunnyResult)
+          return
+        }
+
+        // Second path: scrape the player page for an embedded Bunny playlist.
+        if (tokenResult) {
+          const playerPlaylist = await resolvePlaylistFromPlayerPage(mediaId, tokenResult)
           if (playerPlaylist) {
+            cachePlaylist(mediaId, playerPlaylist)
             await serveProxiedLocation(res, playerPlaylist)
             return
           }
         }
 
         // Fallback: try stream-v2 in case wet3 restores it or for non-Bunny media.
+        const st = tokenResult
         let targetUrl = st
           ? streamV2UrlWithToken(mediaId, st)
           : `${WET3_ORIGIN}/api/stream-v2/${encodeURIComponent(mediaId)}`
