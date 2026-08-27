@@ -29,13 +29,14 @@ import {
   fetchFbStats,
   fetchFbUsers,
 } from '../lib/fanbusy'
+import { useFavorites } from '../lib/favorites'
 
 type FanBusyViewProps = {
   onSwitchSite: () => void
   onLogout: () => void
 }
 
-type ListTab = 'users' | 'posts'
+type ListTab = 'users' | 'posts' | 'favorites'
 
 type AccountFilter = 'all' | 'CREATOR' | 'FANS'
 
@@ -54,6 +55,7 @@ type FbRoute =
   | { view: 'users'; filters: UserFilters; page: number }
   | { view: 'posts'; page: number; nsfw: boolean; free: 'all' | 'free' | 'paid' }
   | { view: 'user'; key: string; by: 'pseudo' | 'id' }
+  | { view: 'favorites' }
 
 const DEFAULT_USER_FILTERS: UserFilters = {
   type: 'all',
@@ -205,6 +207,10 @@ function parseRoute(): FbRoute {
       key: decodeURIComponent(userMatch[1]),
       by: byId ? 'id' : 'pseudo',
     }
+  }
+
+  if (pathname === '/favorites') {
+    return { view: 'favorites' }
   }
 
   if (pathname.startsWith('/posts')) {
@@ -585,9 +591,13 @@ function MediaModal({
 function PostCard({
   post,
   onPlay,
+  isFav,
+  onToggleFav,
 }: {
   post: FbPost
   onPlay: (url: string, isVideo: boolean) => void
+  isFav?: boolean
+  onToggleFav?: () => void
 }) {
   const creator = post.creator
   const avatar = fbAvatar(creator)
@@ -629,6 +639,16 @@ function PostCard({
           </span>
         </div>
         <div className="fb-post-badges">
+          {onToggleFav ? (
+            <button
+              type="button"
+              className={`fav-btn${isFav ? ' active' : ''}`}
+              aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+              onClick={onToggleFav}
+            >
+              {isFav ? '❤' : '♡'}
+            </button>
+          ) : null}
           <span className={`fb-pill ${post.is_free ? 'ok' : 'warn'}`}>
             {post.is_free
               ? 'free'
@@ -869,42 +889,66 @@ function UsersList({
 
   return (
     <div className="fb-main">
-      <div className="fb-hero-line">
-        <div>
-          <h1 className="fb-title">Users</h1>
-          <p className="fb-stats">{statsLine}</p>
+      {/* Hero */}
+      <section className="fb-hero">
+        <div className="fb-hero-top">
+          <div>
+            <p className="fb-hero-eyebrow">Guest API catalog</p>
+            <h1 className="fb-title">Users</h1>
+            <p className="fb-hero-sub">
+              {stats
+                ? `${(stats.total ?? 0).toLocaleString()} accounts · Page ${pageInfo.current_page ?? page}`
+                : 'Loading catalog...'}
+            </p>
+          </div>
+          {!scanMode ? (
+            <button
+              type="button"
+              className="nav-pill"
+              onClick={() => void loadPage(page)}
+              disabled={loading}
+            >
+              Reload page
+            </button>
+          ) : scanning ? (
+            <button
+              type="button"
+              className="nav-pill"
+              onClick={() => {
+                stopRef.current = true
+                setScanning(false)
+                setScanDone(true)
+              }}
+            >
+              Stop scan
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="nav-pill"
+              onClick={() => setFilters({ ...filters })}
+            >
+              Rescan
+            </button>
+          )}
         </div>
-        {!scanMode ? (
-          <button
-            type="button"
-            className="nav-pill"
-            onClick={() => void loadPage(page)}
-            disabled={loading}
-          >
-            Reload page
-          </button>
-        ) : scanning ? (
-          <button
-            type="button"
-            className="nav-pill"
-            onClick={() => {
-              stopRef.current = true
-              setScanning(false)
-              setScanDone(true)
-            }}
-          >
-            Stop scan
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="nav-pill"
-            onClick={() => setFilters({ ...filters })}
-          >
-            Rescan
-          </button>
-        )}
-      </div>
+        {stats ? (
+          <div className="fb-stat-cards">
+            <div className="fb-stat-card">
+              <span className="fb-stat-value">{(stats.creators ?? 0).toLocaleString()}</span>
+              <span className="fb-stat-label">Creators</span>
+            </div>
+            <div className="fb-stat-card">
+              <span className="fb-stat-value">{(stats.fans ?? 0).toLocaleString()}</span>
+              <span className="fb-stat-label">Fans</span>
+            </div>
+            <div className="fb-stat-card">
+              <span className="fb-stat-value">{(stats.total ?? 0).toLocaleString()}</span>
+              <span className="fb-stat-label">Total</span>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <div className="fb-filters">
         <label className="fb-search">
@@ -1018,12 +1062,29 @@ function UsersList({
         </div>
       ) : null}
 
-      {error ? <p className="fb-stats error">{error}</p> : null}
+      {error ? (
+        <div className="fb-error">
+          <p>{error}</p>
+          <button type="button" className="nav-pill" onClick={() => void loadPage(page)}>
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       {scanMode ? (
         <>
           {scanning && scanMatches.length === 0 ? (
-            <p className="fb-muted">Looking for matches…</p>
+            <div className="fb-user-list">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={`skel-${i}`} className="fb-user-skeleton">
+                  <div className="fb-user-skeleton-avatar" />
+                  <div className="fb-user-skeleton-body">
+                    <div className="fb-user-skeleton-line wide" />
+                    <div className="fb-user-skeleton-line narrow" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : scanSlice.length === 0 ? (
             <p className="fb-empty">
               No matches yet
@@ -1072,7 +1133,17 @@ function UsersList({
       ) : (
         <>
           {loading ? (
-            <p className="fb-muted">Loading users…</p>
+            <div className="fb-user-list">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={`skel-${i}`} className="fb-user-skeleton">
+                  <div className="fb-user-skeleton-avatar" />
+                  <div className="fb-user-skeleton-body">
+                    <div className="fb-user-skeleton-line wide" />
+                    <div className="fb-user-skeleton-line narrow" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : users.length === 0 ? (
             <p className="fb-empty">No users on this page.</p>
           ) : (
@@ -1131,6 +1202,7 @@ function PostsList({
   const [pageInfo, setPageInfo] = useState<FbPaginate>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { isFav, toggle: toggleFav } = useFavorites('fanbusy')
   const [player, setPlayer] = useState<{
     url: string
     isVideo: boolean
@@ -1168,14 +1240,17 @@ function PostsList({
 
   return (
     <div className="fb-main">
-      <div className="fb-hero-line">
-        <div>
-          <h1 className="fb-title">Posts</h1>
-          <p className="fb-stats">
-            Guest feed — paid media often still playable
-          </p>
+      <section className="fb-hero">
+        <div className="fb-hero-top">
+          <div>
+            <p className="fb-hero-eyebrow">Content feed</p>
+            <h1 className="fb-title">Posts</h1>
+            <p className="fb-hero-sub">
+              Guest feed · paid media often still playable · Page {pageInfo.current_page ?? page}
+            </p>
+          </div>
         </div>
-      </div>
+      </section>
 
       <div className="fb-filters">
         <div className="fb-chip-row" role="group" aria-label="Post filters">
@@ -1218,9 +1293,31 @@ function PostsList({
         </div>
       </div>
 
-      {error ? <p className="fb-stats error">{error}</p> : null}
+      {error ? (
+        <div className="fb-error">
+          <p>{error}</p>
+          <button type="button" className="nav-pill" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      ) : null}
       {loading ? (
-        <p className="fb-muted">Loading posts…</p>
+        <div className="fb-post-list">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={`skel-${i}`} className="fb-post-skeleton">
+              <div className="fb-post-skeleton-head">
+                <div className="fb-user-skeleton-avatar" style={{ width: 36, height: 36 }} />
+                <div className="fb-user-skeleton-body">
+                  <div className="fb-user-skeleton-line wide" />
+                  <div className="fb-user-skeleton-line narrow" />
+                </div>
+              </div>
+              <div className="fb-user-skeleton-line wide" style={{ height: 14 }} />
+              <div className="fb-user-skeleton-line" style={{ width: '60%', height: 14 }} />
+              <div className="fb-post-skeleton-media" />
+            </div>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <p className="fb-empty">No posts match these filters.</p>
       ) : (
@@ -1230,6 +1327,17 @@ function PostsList({
               key={p._id}
               post={p}
               onPlay={(url, isVideo) => setPlayer({ url, isVideo })}
+              isFav={isFav(p._id)}
+              onToggleFav={() => {
+                const creator = p.creator
+                toggleFav({
+                  id: p._id,
+                  site: 'fanbusy',
+                  title: p.content?.slice(0, 80) || `Post by ${creator?.display_name || creator?.pseudo || 'Unknown'}`,
+                  thumb: p.illustrations?.[0] ? fbMediaUrl(p.illustrations[0]) : undefined,
+                  meta: `${creator?.display_name || creator?.pseudo || ''} · ${p.is_free ? 'free' : 'paid'}`,
+                })
+              }}
             />
           ))}
         </div>
@@ -1561,6 +1669,65 @@ function UserDetailPage({
   )
 }
 
+function FavoritesList() {
+  const { items: favItems, remove } = useFavorites('fanbusy')
+  const [player, setPlayer] = useState<{ url: string; isVideo: boolean } | null>(null)
+
+  return (
+    <div className="fb-main">
+      <section className="fb-hero">
+        <div className="fb-hero-top">
+          <div>
+            <p className="fb-hero-eyebrow">Saved content</p>
+            <h1 className="fb-title">Favorites</h1>
+            <p className="fb-hero-sub">{favItems.length} saved item{favItems.length !== 1 ? 's' : ''}</p>
+          </div>
+        </div>
+      </section>
+
+      {favItems.length === 0 ? (
+        <p className="fb-empty">No favorites yet. Click the heart on any post to save it here.</p>
+      ) : (
+        <div className="fb-fav-grid">
+          {favItems.map((fav) => (
+            <div key={fav.id} className="fb-fav-card">
+              {fav.thumb ? (
+                <button
+                  type="button"
+                  className="fb-fav-thumb"
+                  onClick={() => setPlayer({ url: fav.thumb!, isVideo: true })}
+                >
+                  <img src={fav.thumb} alt="" loading="lazy" />
+                  <span className="ft-play-badge" style={{ opacity: 1 }}>▶</span>
+                </button>
+              ) : null}
+              <div className="fb-fav-body">
+                <p className="fb-fav-title">{fav.title}</p>
+                {fav.meta ? <p className="fb-fav-meta">{fav.meta}</p> : null}
+              </div>
+              <button
+                type="button"
+                className="fav-btn active"
+                aria-label="Remove from favorites"
+                onClick={() => remove(fav.id)}
+              >
+                ❤
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <MediaModal
+        open={Boolean(player)}
+        url={player?.url ?? ''}
+        isVideo={player?.isVideo ?? true}
+        onClose={() => setPlayer(null)}
+      />
+    </div>
+  )
+}
+
 export function FanBusyView({ onSwitchSite, onLogout }: FanBusyViewProps) {
   const [route, setRoute] = useState<FbRoute>(() => {
     if (!window.location.hash || window.location.hash === '#/') {
@@ -1587,8 +1754,10 @@ export function FanBusyView({ onSwitchSite, onLogout }: FanBusyViewProps) {
       .catch(() => setStats(null))
   }, [])
 
+  const { count: fbFavCount } = useFavorites('fanbusy')
+
   const tab: ListTab =
-    route.view === 'posts' ? 'posts' : route.view === 'user' ? 'users' : 'users'
+    route.view === 'posts' ? 'posts' : route.view === 'favorites' ? 'favorites' : 'users'
 
   return (
     <div className="app fb-app">
@@ -1610,6 +1779,12 @@ export function FanBusyView({ onSwitchSite, onLogout }: FanBusyViewProps) {
               className={`nav-tab${route.view === 'posts' ? ' active' : ''}`}
             >
               Posts
+            </a>
+            <a
+              href="#/favorites"
+              className={`nav-tab${route.view === 'favorites' ? ' active' : ''}`}
+            >
+              Favs{fbFavCount ? ` (${fbFavCount})` : ''}
             </a>
           </nav>
           {route.view === 'user' ? (
@@ -1638,6 +1813,9 @@ export function FanBusyView({ onSwitchSite, onLogout }: FanBusyViewProps) {
         ) : null}
         {route.view === 'user' ? (
           <UserDetailPage routeKey={route.key} by={route.by} />
+        ) : null}
+        {route.view === 'favorites' ? (
+          <FavoritesList />
         ) : null}
       </main>
     </div>

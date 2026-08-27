@@ -13,6 +13,7 @@ import {
   placeholderImage,
   wet3AssetUrl,
 } from '../lib/wet3'
+import { useFavorites } from '../lib/favorites'
 
 type CreatorsBrowseState = {
   search: string
@@ -69,6 +70,7 @@ export function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const { isFav, toggle: toggleFav } = useFavorites('wetaccess')
   const browseStorageKey = twitterOnly ? TWITTER_BROWSE_HASH_KEY : BROWSE_HASH_KEY
   const hashBase: '#/' | '#/twitter' = twitterOnly ? '#/twitter' : '#/'
   const profileFrom = twitterOnly ? 'twitter' : 'creators'
@@ -226,32 +228,58 @@ export function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean })
       {!loading && !error ? (
         <section className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3.5 max-md:gap-3">
           {creators.map((creator) => (
-            <a
+            <div
               key={creator.u}
-              className="group grid gap-3.5 max-md:gap-2.5 text-left p-4 max-md:p-3 border border-border bg-card rounded-2xl cursor-pointer no-underline text-inherit transition-all hover:-translate-y-0.5 hover:border-accent/30 hover:bg-card-hover hover:shadow-lg active:scale-[0.98]"
-              href={`#/user/${encodeURIComponent(creator.u)}?from=${profileFrom}`}
-              target="_blank"
-              rel="noopener noreferrer"
+              className="group relative grid gap-3.5 max-md:gap-2.5 text-left p-4 max-md:p-3 border border-border bg-card rounded-2xl cursor-pointer no-underline text-inherit transition-all hover:-translate-y-0.5 hover:border-accent/30 hover:bg-card-hover hover:shadow-lg active:scale-[0.98]"
             >
-              <img
-                className="w-full aspect-square rounded-[18px] object-cover bg-inset"
-                src={wet3AssetUrl(creator.p)}
-                alt=""
-                loading="lazy"
-                onError={handleImageError}
-              />
-              <div className="grid gap-1 min-w-0">
-                <strong className="font-display text-[15px] font-bold">
-                  @{creator.u}
-                </strong>
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-muted">
-                  {creator.d}
-                </span>
-                <span className="inline-flex self-start mt-0.5 px-2 py-1 rounded-full bg-inset text-soft text-[11px] font-semibold tracking-wide uppercase">
-                  {creator.ds} posts
-                </span>
-              </div>
-            </a>
+              <a
+                className="contents no-underline text-inherit"
+                href={`#/user/${encodeURIComponent(creator.u)}?from=${profileFrom}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  className="w-full aspect-square rounded-[18px] object-cover bg-inset"
+                  src={wet3AssetUrl(creator.p)}
+                  alt=""
+                  loading="lazy"
+                  onError={handleImageError}
+                />
+                <div className="grid gap-1 min-w-0">
+                  <strong className="font-display text-[15px] font-bold">
+                    @{creator.u}
+                  </strong>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-muted">
+                    {creator.d}
+                  </span>
+                  <span className="inline-flex self-start mt-0.5 px-2 py-1 rounded-full bg-inset text-soft text-[11px] font-semibold tracking-wide uppercase">
+                    {creator.ds} posts
+                  </span>
+                </div>
+              </a>
+              <button
+                type="button"
+                className={`absolute top-2 right-2 w-8 h-8 grid place-items-center rounded-full text-sm border-none cursor-pointer transition-all ${
+                  isFav(creator.u)
+                    ? 'bg-accent/80 text-white opacity-100'
+                    : 'bg-black/50 text-white/70 opacity-0 group-hover:opacity-100'
+                } hover:bg-accent hover:text-white`}
+                aria-label={isFav(creator.u) ? 'Remove from favorites' : 'Add to favorites'}
+                onClick={(e) => {
+                  e.preventDefault()
+                  toggleFav({
+                    id: creator.u,
+                    site: 'wetaccess',
+                    title: `@${creator.u}`,
+                    thumb: wet3AssetUrl(creator.p),
+                    url: `#/user/${encodeURIComponent(creator.u)}`,
+                    meta: `${creator.ds} posts`,
+                  })
+                }}
+              >
+                {isFav(creator.u) ? '❤' : '♡'}
+              </button>
+            </div>
           ))}
         </section>
       ) : null}

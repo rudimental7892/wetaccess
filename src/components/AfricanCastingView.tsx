@@ -14,10 +14,12 @@ import {
   fetchAcEmbed,
   formatAcDuration,
 } from '../lib/africancasting'
+import { useFavorites } from '../lib/favorites'
 
 const PAGE_SIZE = 24
 
 type SortKey = 'latest' | 'oldest' | 'title'
+type ViewMode = 'catalog' | 'favorites'
 
 type AfricanCastingViewProps = {
   onSwitchSite: () => void
@@ -41,7 +43,9 @@ export function AfricanCastingView({
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>('catalog')
   const galleryRef = useRef<HTMLElement>(null)
+  const { items: favItems, isFav, toggle: toggleFav, count: favCount } = useFavorites('africancasting')
 
   const [activeId, setActiveId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -169,6 +173,13 @@ export function AfricanCastingView({
           </button>
         </div>
         <div className="app-nav-actions">
+          <button
+            type="button"
+            className={`nav-pill${viewMode === 'favorites' ? ' active' : ''}`}
+            onClick={() => setViewMode(viewMode === 'favorites' ? 'catalog' : 'favorites')}
+          >
+            {viewMode === 'favorites' ? 'Back to catalog' : `Favorites${favCount ? ` (${favCount})` : ''}`}
+          </button>
           <button type="button" className="nav-pill" onClick={onSwitchSite}>
             Switch site
           </button>
@@ -179,6 +190,64 @@ export function AfricanCastingView({
       </header>
 
       <main className="page ac-page" ref={galleryRef}>
+        {viewMode === 'favorites' ? (
+          <>
+            <section className="ac-hero">
+              <p className="ac-hero-eyebrow">Saved videos</p>
+              <h1 className="ac-hero-title">Favorites</h1>
+              <p className="ac-hero-sub">{favCount} saved video{favCount !== 1 ? 's' : ''}</p>
+            </section>
+            {favItems.length === 0 ? (
+              <p className="ac-empty">No favorites yet. Click the heart on any video to save it here.</p>
+            ) : (
+              <div className="ac-grid">
+                {favItems.map((fav) => (
+                  <div key={fav.id} className="ac-card">
+                    <button
+                      type="button"
+                      className="ac-card-click"
+                      onClick={() => {
+                        const vid: CatalogVideo = {
+                          id: fav.id,
+                          title: fav.title,
+                          length: '',
+                          keywords: '',
+                          description: '',
+                          channels: '',
+                          models: fav.meta?.split(' · ')[0] || '',
+                          embed: '',
+                          url: '',
+                          main_thumb: '',
+                        }
+                        void playVideo(vid)
+                      }}
+                    >
+                      <div className="ac-card-thumb">
+                        {fav.thumb ? (
+                          <img src={fav.thumb} alt="" loading="lazy" onError={handleImageError} />
+                        ) : null}
+                        <span className="ac-card-play">&#9654;</span>
+                      </div>
+                      <div className="ac-card-body">
+                        <h3>{fav.title}</h3>
+                        {fav.meta ? <p className="ac-card-meta">{fav.meta}</p> : null}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="fav-btn active"
+                      aria-label="Remove from favorites"
+                      onClick={() => toggleFav({ id: fav.id, site: 'africancasting', title: fav.title })}
+                    >
+                      ❤
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
         {/* Hero */}
         <section className="ac-hero">
           <p className="ac-hero-eyebrow">Video catalog</p>
@@ -239,30 +308,48 @@ export function AfricanCastingView({
             : filtered.length === 0
               ? <p className="ac-empty">No matches on this page.</p>
               : filtered.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    className={`ac-card${v.id === activeId ? ' active' : ''}`}
-                    onClick={() => void playVideo(v)}
-                  >
-                    <div className="ac-card-thumb">
-                      <img
-                        src={acThumbUrl(v.main_thumb)}
-                        alt=""
-                        loading="lazy"
-                        onError={handleImageError}
-                      />
-                      <span className="ac-card-play">&#9654;</span>
-                      <span className="ac-card-duration">{formatAcDuration(v.length)}</span>
-                    </div>
-                    <div className="ac-card-body">
-                      <h3>{v.title}</h3>
-                      <p className="ac-card-meta">{v.models || '—'}</p>
-                      {v.channels ? (
-                        <p className="ac-card-tags">{v.channels}</p>
-                      ) : null}
-                    </div>
-                  </button>
+                  <div key={v.id} className={`ac-card${v.id === activeId ? ' active' : ''}`}>
+                    <button
+                      type="button"
+                      className="ac-card-click"
+                      onClick={() => void playVideo(v)}
+                    >
+                      <div className="ac-card-thumb">
+                        <img
+                          src={acThumbUrl(v.main_thumb)}
+                          alt=""
+                          loading="lazy"
+                          onError={handleImageError}
+                        />
+                        <span className="ac-card-play">&#9654;</span>
+                        <span className="ac-card-duration">{formatAcDuration(v.length)}</span>
+                      </div>
+                      <div className="ac-card-body">
+                        <h3>{v.title}</h3>
+                        <p className="ac-card-meta">{v.models || '—'}</p>
+                        {v.channels ? (
+                          <p className="ac-card-tags">{v.channels}</p>
+                        ) : null}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`fav-btn${isFav(v.id) ? ' active' : ''}`}
+                      aria-label={isFav(v.id) ? 'Remove from favorites' : 'Add to favorites'}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleFav({
+                          id: v.id,
+                          site: 'africancasting',
+                          title: v.title,
+                          thumb: acThumbUrl(v.main_thumb),
+                          meta: `${v.models || ''} · ${formatAcDuration(v.length)}`,
+                        })
+                      }}
+                    >
+                      {isFav(v.id) ? '❤' : '♡'}
+                    </button>
+                  </div>
                 ))}
         </div>
 
@@ -307,6 +394,8 @@ export function AfricanCastingView({
             </button>
           </nav>
         ) : null}
+          </>
+        )}
       </main>
 
       {/* Video modal */}

@@ -4,15 +4,16 @@ import { ScrollToTop } from './ScrollToTop'
 type AppShellProps = {
   children: ReactNode
   onHome?: () => void
-  activeNav?: 'creators' | 'twitter' | 'drops'
+  activeNav?: 'creators' | 'twitter' | 'drops' | 'favorites'
   breadcrumb?: string
   backLabel?: string
   onBack?: () => void
   onSwitchSite?: () => void
   onLogout?: () => void
+  favCount?: number
 }
 
-function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' }) {
+function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' | 'favorites' }) {
   const cls = "w-5 h-5"
   if (name === 'creators') {
     return (
@@ -40,6 +41,13 @@ function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' })
       </svg>
     )
   }
+  if (name === 'favorites') {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+      </svg>
+    )
+  }
   // sites
   return (
     <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -60,6 +68,7 @@ export function AppShell({
   onBack,
   onSwitchSite,
   onLogout,
+  favCount = 0,
 }: AppShellProps) {
   return (
     <div className="min-h-svh grid grid-rows-[auto_1fr]">
@@ -88,6 +97,7 @@ export function AppShell({
               ['#/', 'creators', 'Creators'],
               ['#/twitter', 'twitter', 'Twitter'],
               ['#/drops', 'drops', 'Drops'],
+              ['#/favorites', 'favorites', favCount ? `Favs (${favCount})` : 'Favs'],
             ] as const).map(([href, key, label]) => (
               <a
                 key={key}
@@ -171,6 +181,7 @@ export function AppShell({
           { href: '#/', key: 'creators' as const, icon: 'creators' as const, label: 'Creators' },
           { href: '#/twitter', key: 'twitter' as const, icon: 'twitter' as const, label: 'Twitter' },
           { href: '#/drops', key: 'drops' as const, icon: 'drops' as const, label: 'Drops' },
+          { href: '#/favorites', key: 'favorites' as const, icon: 'favorites' as const, label: favCount ? `Favs (${favCount})` : 'Favs' },
         ]).map(({ href, key, icon, label }) => (
           <a
             key={key}
