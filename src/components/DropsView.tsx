@@ -205,33 +205,43 @@ export function DropsListView() {
 
   return (
     <>
-      <section className="hero">
-        <p className="hero-eyebrow">Exclusive packs</p>
-        <h1 className="hero-title">Drops</h1>
-        <p className="hero-copy">
+      {/* Hero */}
+      <section className="relative overflow-hidden mb-7 p-7 max-md:p-[18px] max-md:mb-[18px] border border-border rounded-3xl bg-gradient-to-br from-accent/[0.08] via-transparent to-transparent bg-surface shadow-sm">
+        <div className="absolute -right-[10%] -bottom-[60%] w-[280px] h-[280px] rounded-full bg-[radial-gradient(circle,rgba(224,100,152,0.16),transparent_68%)] pointer-events-none" />
+        <p className="m-0 mb-2.5 text-accent text-xs font-bold tracking-[0.14em] uppercase">
+          Exclusive packs
+        </p>
+        <h1 className="m-0 max-w-[12ch] font-display text-[clamp(1.75rem,8vw,2.4rem)] md:text-[clamp(2.2rem,6vw,3.4rem)] leading-[0.95] font-[800] tracking-tight">
+          Drops
+        </h1>
+        <p className="mt-3.5 m-0 max-w-[48ch] text-muted text-[15px] max-md:text-sm">
           {loading
-            ? 'Loading unlockable packs…'
+            ? 'Loading unlockable packs...'
             : `${drops.length.toLocaleString()} packs · ${unlockedCount.toLocaleString()} unlocked · ${lockedCount.toLocaleString()} locked`}
         </p>
       </section>
 
-      <section className="panel search-panel">
-        <form className="search-row" onSubmit={submitSearch}>
+      {/* Search + filter */}
+      <section className="grid gap-3.5 mb-6 p-4.5 max-md:p-3.5 border border-border rounded-2xl bg-surface/70">
+        <form className="flex gap-2.5 max-md:flex-col max-md:items-stretch" onSubmit={submitSearch}>
           <input
-            className="search-input"
+            className="flex-1 min-w-0 border border-border bg-inset text-foreground rounded-2xl px-4 py-3.5 max-md:min-h-12 outline-none transition-all focus:border-accent/45 focus:ring-4 focus:ring-accent/10 placeholder:text-soft"
             type="search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search drops…"
+            placeholder="Search drops..."
             aria-label="Search drops"
           />
-          <button type="submit" className="btn btn-primary">
+          <button
+            type="submit"
+            className="border border-accent/45 bg-gradient-to-br from-accent to-[#c4004a] text-white rounded-2xl px-5 py-3.5 max-md:min-h-12 max-md:w-full font-semibold shadow-[0_10px_24px_rgba(224,100,152,0.22)] hover:-translate-y-px hover:shadow-[0_14px_28px_rgba(224,100,152,0.28)] transition-all cursor-pointer"
+          >
             Search
           </button>
           {searchQuery ? (
             <button
               type="button"
-              className="btn btn-ghost"
+              className="border border-border bg-transparent rounded-2xl px-5 py-3.5 max-md:min-h-12 max-md:w-full font-semibold hover:border-border-strong hover:bg-accent-soft transition-all cursor-pointer"
               onClick={() => updateBrowseHash({ search: '', page: 1, filter })}
             >
               Clear
@@ -239,7 +249,12 @@ export function DropsListView() {
           ) : null}
         </form>
 
-        <div className="segmented" role="tablist" aria-label="Drop filters">
+        {/* Filter tabs */}
+        <div
+          className="inline-flex gap-1.5 p-1.5 border border-border rounded-full bg-inset w-fit max-w-full overflow-x-auto max-md:flex max-md:w-full"
+          role="tablist"
+          aria-label="Drop filters"
+        >
           {(
             [
               ['all', `All (${drops.length})`],
@@ -251,7 +266,11 @@ export function DropsListView() {
               key={value}
               type="button"
               role="tab"
-              className={`tab-btn${filter === value ? ' active' : ''}`}
+              className={
+                filter === value
+                  ? 'text-white bg-gradient-to-br from-accent to-[#c4004a] shadow-[0_8px_20px_rgba(224,100,152,0.22)] rounded-full px-4 py-2.5 max-md:flex-1 max-md:min-h-11 max-md:px-3 text-[13px] max-md:text-xs font-semibold whitespace-nowrap cursor-pointer border-none'
+                  : 'text-muted rounded-full px-4 py-2.5 max-md:flex-1 max-md:min-h-11 max-md:px-3 text-[13px] max-md:text-xs font-semibold whitespace-nowrap cursor-pointer bg-transparent border-none hover:text-foreground hover:bg-white/[0.04] transition-all'
+              }
               aria-selected={filter === value}
               onClick={() => updateBrowseHash({ search: searchQuery, page: 1, filter: value })}
             >
@@ -261,11 +280,15 @@ export function DropsListView() {
         </div>
       </section>
 
-      {error ? <p className="status error">{error}</p> : null}
+      {error ? (
+        <p className="m-0 mb-4.5 p-3 px-3.5 rounded-2xl text-danger border border-danger/25 bg-danger/[0.08] text-sm">
+          {error}
+        </p>
+      ) : null}
       {loading ? <LoadingGrid count={12} variant="creators" /> : null}
 
       {!loading && !error ? (
-        <section className="drops-grid">
+        <section className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5 max-md:gap-3">
           {visible.map((drop) => {
             const items = dropItemCount(drop)
             const progress = dropProgress(drop)
@@ -273,33 +296,49 @@ export function DropsListView() {
             return (
               <a
                 key={drop.id}
-                className={`drop-card${drop.unlocked ? '' : ' locked'}`}
+                className={`group grid gap-3 max-md:gap-2.5 text-left p-3 max-md:p-2.5 border border-border bg-card rounded-2xl cursor-pointer no-underline text-inherit transition-all hover:-translate-y-0.5 hover:border-accent/30 hover:bg-card-hover hover:shadow-lg active:scale-[0.98] ${
+                  drop.unlocked ? '' : 'opacity-[0.92]'
+                }`}
                 href={`#/drops/${drop.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <div className="drop-thumb-wrap">
+                <div className="relative rounded-2xl overflow-hidden bg-inset">
                   <img
+                    className={`w-full aspect-square object-cover block ${
+                      drop.unlocked ? '' : 'saturate-[0.7] brightness-[0.72]'
+                    }`}
                     src={dropThumbnailUrl(drop.thumbnail)}
                     alt=""
                     loading="lazy"
                     onError={handleImageError}
                   />
-                  <span className={`drop-status${drop.unlocked ? ' open' : ''}`}>
+                  <span
+                    className={`absolute top-2 left-2 z-[1] px-2 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase text-white border border-white/12 ${
+                      drop.unlocked ? 'bg-accent/88' : 'bg-black/72'
+                    }`}
+                  >
                     {drop.unlocked ? 'Unlocked' : 'Locked'}
                   </span>
                 </div>
-                <div className="drop-card-body">
-                  <strong>@{drop.username}</strong>
-                  <span className="drop-title">{drop.title}</span>
-                  <span className="drop-meta">
+                <div className="grid gap-1 min-w-0">
+                  <strong className="font-display text-[15px] font-bold">
+                    @{drop.username}
+                  </strong>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-muted">
+                    {drop.title}
+                  </span>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-muted">
                     {items > 0 ? `${items} items · ` : ''}
                     {formatDropRelease(drop.release_at)}
                   </span>
-                  <div className="drop-progress" aria-hidden="true">
-                    <span className="drop-progress-fill" style={{ width: `${progress}%` }} />
+                  <div className="mt-1 h-[5px] rounded-full bg-inset overflow-hidden" aria-hidden="true">
+                    <span
+                      className="block h-full rounded-[inherit] bg-gradient-to-r from-accent to-warm"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
-                  <span className="drop-clicks">
+                  <span className="text-[11px] tabular-nums text-soft font-semibold">
                     {drop.click_count}/{drop.required_clicks} clicks
                   </span>
                 </div>
@@ -310,7 +349,9 @@ export function DropsListView() {
       ) : null}
 
       {!loading && !error && visible.length === 0 ? (
-        <p className="empty">No drops matched that filter.</p>
+        <p className="m-0 py-12 px-5 text-center text-muted text-[15px] border border-dashed border-border rounded-2xl bg-white/[0.02]">
+          No drops matched that filter.
+        </p>
       ) : null}
 
       {!loading && !error && visible.length > 0 ? (
@@ -345,7 +386,6 @@ export function DropDetailView({ dropId }: { dropId: number }) {
       setProgress({ phase: 'loading', clickCount: 0, requiredClicks: 0 })
 
       try {
-        // Show pack metadata immediately from the slim catalog cache when possible.
         const catalog = await fetchDrops()
         const preview = catalog.find((row) => row.id === dropId) ?? null
         if (!cancelled && preview) {
@@ -446,21 +486,26 @@ export function DropDetailView({ dropId }: { dropId: number }) {
 
   const unlockStatusLabel = unlocking
     ? progress?.phase === 'refreshing'
-      ? 'Refreshing pack…'
+      ? 'Refreshing pack...'
       : progress?.phase === 'loading'
-        ? 'Loading pack…'
-        : 'Unlocking…'
+        ? 'Loading pack...'
+        : 'Unlocking...'
     : drop?.unlocked
       ? 'Unlocked'
       : 'Locked'
 
   return (
     <>
-      <section className="profile-hero">
-        <div className="profile-hero-top">
-          <div className="drop-detail-thumb" aria-hidden="true">
+      {/* Profile-style hero for drop detail */}
+      <section className="grid gap-4.5 mb-6 p-6 max-md:p-[18px] max-md:mb-[18px] border border-border rounded-3xl bg-gradient-to-b from-accent/10 to-transparent bg-surface shadow-sm">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div
+            className="w-[88px] h-[88px] rounded-[22px] overflow-hidden grid place-items-center bg-gradient-to-br from-accent to-warm shadow-[0_12px_32px_rgba(224,100,152,0.22)] text-white font-display text-[28px] font-[800]"
+            aria-hidden="true"
+          >
             {drop ? (
               <img
+                className="w-full h-full object-cover"
                 src={dropThumbnailUrl(drop.thumbnail)}
                 alt=""
                 onError={handleImageError}
@@ -471,12 +516,14 @@ export function DropDetailView({ dropId }: { dropId: number }) {
           </div>
         </div>
         <div>
-          <h1 className="profile-title">{drop?.title ?? `Drop #${dropId}`}</h1>
-          <p className="profile-subtitle">
+          <h1 className="m-0 font-display text-[clamp(1.8rem,4vw,2.6rem)] max-md:text-[1.65rem] max-md:overflow-wrap-anywhere leading-none font-[800] tracking-tight">
+            {drop?.title ?? `Drop #${dropId}`}
+          </h1>
+          <p className="mt-2 m-0 text-muted text-sm">
             {drop ? (
               <>
                 <a
-                  className="link-btn"
+                  className="border-none bg-none p-0 text-accent-hover font-semibold cursor-pointer no-underline hover:underline"
                   href={`#/user/${encodeURIComponent(drop.username)}?from=drops`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -487,22 +534,22 @@ export function DropDetailView({ dropId }: { dropId: number }) {
                 {formatDropRelease(drop.release_at)}
               </>
             ) : loading ? (
-              'Loading pack…'
+              'Loading pack...'
             ) : (
               'Pack unavailable'
             )}
           </p>
         </div>
         {drop ? (
-          <div className="stat-row">
-            <span className="stat-pill">
-              <strong>{unlockStatusLabel}</strong>
+          <div className="flex flex-wrap gap-2.5 max-md:overflow-x-auto max-md:flex-nowrap max-md:pb-0.5">
+            <span className="inline-flex items-center gap-2 px-3.5 py-2.5 border border-border rounded-full bg-black/18 text-muted text-[13px] shrink-0">
+              <strong className="text-foreground font-semibold">{unlockStatusLabel}</strong>
             </span>
-            <span className="stat-pill">
-              <strong>{dropItemCount(drop)}</strong> items
+            <span className="inline-flex items-center gap-2 px-3.5 py-2.5 border border-border rounded-full bg-black/18 text-muted text-[13px] shrink-0">
+              <strong className="text-foreground font-semibold">{dropItemCount(drop)}</strong> items
             </span>
-            <span className="stat-pill">
-              <strong>
+            <span className="inline-flex items-center gap-2 px-3.5 py-2.5 border border-border rounded-full bg-black/18 text-muted text-[13px] shrink-0">
+              <strong className="text-foreground font-semibold">
                 {drop.click_count}/{drop.required_clicks}
               </strong>{' '}
               clicks
@@ -512,35 +559,46 @@ export function DropDetailView({ dropId }: { dropId: number }) {
       </section>
 
       {unlocking ? (
-        <p className="status unlock-status">
-          {progress?.phase === 'refreshing'
-            ? 'Pack unlocked — loading media…'
-            : progress?.phase === 'loading'
-              ? 'Loading drop catalog…'
-              : `Unlocking without ads… ${progress?.clickCount ?? 0}/${progress?.requiredClicks || drop?.required_clicks || '?'} clicks`}
+        <div className="m-0 mb-4.5 p-3 px-3.5 rounded-2xl bg-card text-muted text-sm grid gap-2.5">
+          <p className="m-0">
+            {progress?.phase === 'refreshing'
+              ? 'Pack unlocked -- loading media...'
+              : progress?.phase === 'loading'
+                ? 'Loading drop catalog...'
+                : `Unlocking without ads... ${progress?.clickCount ?? 0}/${progress?.requiredClicks || drop?.required_clicks || '?'} clicks`}
+          </p>
           {progress && progress.requiredClicks > 0 ? (
-            <span className="drop-progress unlock-progress" aria-hidden="true">
-              <span className="drop-progress-fill" style={{ width: `${progressPct}%` }} />
-            </span>
+            <div className="h-[5px] rounded-full bg-inset overflow-hidden" aria-hidden="true">
+              <span
+                className="block h-full rounded-[inherit] bg-gradient-to-r from-accent to-warm"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
           ) : null}
-        </p>
+        </div>
       ) : null}
 
-      {error ? <p className="status error">{error}</p> : null}
+      {error ? (
+        <p className="m-0 mb-4.5 p-3 px-3.5 rounded-2xl text-danger border border-danger/25 bg-danger/[0.08] text-sm">
+          {error}
+        </p>
+      ) : null}
       {loading && !drop ? <LoadingGrid count={10} variant="media" /> : null}
 
       {!loading && drop && !drop.unlocked && !unlocking ? (
-        <p className="empty">
+        <p className="m-0 py-12 px-5 text-center text-muted text-[15px] border border-dashed border-border rounded-2xl bg-white/[0.02]">
           This pack is still locked ({drop.click_count}/{drop.required_clicks}). Unlock
-          bypass did not finish — open it again to retry.
+          bypass did not finish -- open it again to retry.
         </p>
       ) : null}
 
       {!loading && drop?.unlocked ? (
-        <section ref={galleryRef} className="media-section panel gallery-anchor">
+        <section
+          ref={galleryRef}
+          className="grid gap-4.5 p-4.5 max-md:p-3.5 border border-border rounded-2xl bg-surface/70 scroll-mt-[76px]"
+        >
           {visible.length > 0 && totalPages > 1 ? (
             <Pagination
-              className="pagination-top"
               label="Pagination top"
               page={currentPage}
               totalPages={totalPages}
@@ -549,22 +607,23 @@ export function DropDetailView({ dropId }: { dropId: number }) {
             />
           ) : null}
 
-          <div className="media-grid">
+          <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-4 gap-x-3 max-md:gap-3 max-md:gap-x-2.5">
             {visible.map((item) => {
               const isVideo = dropItemIsVideo(item)
               const href = dropItemOpenUrl(item)
               const thumb = dropItemThumbnailUrl(item)
               const thumbFallback = wet3PreviewFallback(item)
               return (
-                <article key={item.id} className="media-item">
+                <article key={item.id} className="grid gap-2.5 min-w-0">
                   <a
                     href={href}
-                    className="media-card"
+                    className="relative block aspect-square bg-inset border border-border rounded-[18px] overflow-hidden transition-all hover:-translate-y-0.5 hover:scale-[1.01] hover:border-accent/30 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[3px]"
                     target="_blank"
                     rel="noreferrer"
                     aria-label={`${isVideo ? 'Watch' : 'View'} drop item ${item.id}`}
                   >
                     <img
+                      className="w-full h-full object-cover block bg-inset"
                       src={thumb}
                       alt=""
                       loading="lazy"
@@ -573,24 +632,28 @@ export function DropDetailView({ dropId }: { dropId: number }) {
                     />
                     {isVideo ? (
                       <>
-                        <span className="video-badge" aria-hidden="true">
-                          ▶
+                        <span className="absolute top-2 right-2 z-[2] text-[10px] w-7 h-7 rounded-full inline-flex items-center justify-center text-white bg-accent/90 shadow-[0_8px_18px_rgba(224,100,152,0.28)] pointer-events-none">
+                          &#9654;
                         </span>
                         {item.duration?.trim() ? (
-                          <span className="duration-badge">
+                          <span className="absolute right-2 bottom-2 z-[2] min-w-[40px] px-1.5 py-1 rounded-lg text-center text-[11px] font-bold tabular-nums leading-tight text-white bg-black/80 border border-white/12 shadow-md pointer-events-none">
                             {item.duration.replace(/^00:/, '')}
                           </span>
                         ) : null}
                       </>
                     ) : null}
                   </a>
-                  <div className="media-card-meta">
-                    <span className="media-date">{item.price || 'Free'}</span>
-                    <span className="media-label" title={item.id}>
+                  <div className="grid gap-[3px] px-0.5">
+                    <span className="text-[11px] tabular-nums text-soft font-semibold tracking-[0.01em]">
+                      {item.price || 'Free'}
+                    </span>
+                    <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-foreground" title={item.id}>
                       {item.id}
                     </span>
                     {isVideo && item.duration?.trim() ? (
-                      <span className="media-duration">{item.duration}</span>
+                      <span className="text-[11px] tabular-nums text-accent-hover font-semibold max-md:hidden">
+                        {item.duration}
+                      </span>
                     ) : null}
                   </div>
                 </article>
@@ -599,10 +662,11 @@ export function DropDetailView({ dropId }: { dropId: number }) {
           </div>
 
           {visible.length === 0 ? (
-            <p className="empty">No media in this pack.</p>
+            <p className="m-0 py-12 px-5 text-center text-muted text-[15px] border border-dashed border-border rounded-2xl bg-white/[0.02]">
+              No media in this pack.
+            </p>
           ) : totalPages > 1 ? (
             <Pagination
-              className="pagination-bottom"
               label="Pagination bottom"
               page={currentPage}
               totalPages={totalPages}

@@ -14,7 +14,7 @@ type WatchViewProps = {
 }
 
 const AAF_BROKER_DOWN =
-  'AllAccessFans playback is down: wet3 is serving expired CloudFront signatures (and its proxy-m3u8 broker returns “Proxy Error”). YouFanly (Bunny) videos should still play.'
+  'AllAccessFans playback is down: wet3 is serving expired CloudFront signatures (and its proxy-m3u8 broker returns "Proxy Error"). YouFanly (Bunny) videos should still play.'
 
 const BUNNY_REFERER_HINT =
   'Stream CDN blocked the request (HTTP 403). Playback must stay on the wetaccess HLS proxy — retry, or hard-refresh the watch tab.'
@@ -191,7 +191,7 @@ function explainUpstreamFailure(status: number, head: string, url: string): stri
 export function WatchView({ mediaId, posterItem }: WatchViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState('Loading stream…')
+  const [status, setStatus] = useState('Loading stream...')
   const [playUrl, setPlayUrl] = useState<string | null>(null)
   const src = streamUrl(mediaId)
   const poster = posterItem
@@ -207,7 +207,7 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
     let onNativeError: (() => void) | null = null
     setError(null)
     setPlayUrl(null)
-    setStatus('Loading stream…')
+    setStatus('Loading stream...')
 
     const fail = (message: string) => {
       if (!cancelled) {
@@ -225,7 +225,6 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
       if (Hls.isSupported()) {
         hls = new Hls({
           enableWorker: true,
-          // Absolute proxied URLs already; don't let hls invent cross-origin bases.
           manifestLoadingMaxRetry: 4,
           manifestLoadingRetryDelay: 800,
           levelLoadingMaxRetry: 4,
@@ -242,14 +241,13 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal || cancelled) return
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            // One automatic resume; don't infinite-loop on hard 403s.
             if (data.response?.code === 403) {
               fail(BUNNY_REFERER_HINT)
               hls?.destroy()
               hls = null
               return
             }
-            setStatus('Network glitch — retrying…')
+            setStatus('Network glitch -- retrying...')
             hls?.startLoad()
             return
           }
@@ -287,7 +285,7 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
         fail(result.message)
         return
       }
-      setStatus('Starting player…')
+      setStatus('Starting player...')
       startPlayback(result.playUrl)
     })()
 
@@ -304,26 +302,29 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
   }, [src])
 
   return (
-    <section className="watch-view panel">
-      <div className="watch-player-wrap">
+    <section className="grid gap-3.5 p-4.5 max-md:p-3.5 max-w-[1100px] mx-auto border border-border rounded-2xl bg-surface/70">
+      <div className="relative w-full bg-[radial-gradient(ellipse_at_30%_0%,rgba(224,100,152,0.18),transparent_55%),linear-gradient(160deg,#1a1720,#0e0c10_60%)] rounded-[14px] overflow-hidden border border-border">
         <video
           ref={videoRef}
-          className="watch-player"
+          className="block w-full max-h-[min(72vh,720px)] bg-black align-middle"
           controls
           playsInline
           poster={poster}
         />
       </div>
-      {status ? <p className="watch-status">{status}</p> : null}
+      {status ? <p className="m-0 text-muted text-[0.9rem]">{status}</p> : null}
       {error ? (
-        <div className="watch-error">
-          <p>{error}</p>
-          <button type="button" className="ghost-btn" onClick={() => window.location.reload()}>
+        <div className="flex flex-wrap items-center gap-2.5 p-3 px-3.5 rounded-xl border border-danger/35 bg-[rgba(127,29,29,0.25)]">
+          <p className="m-0 flex-1 basis-[220px] text-[#fecaca]">{error}</p>
+          <button
+            type="button"
+            className="border border-border bg-transparent rounded-2xl px-5 py-3.5 font-semibold hover:border-border-strong hover:bg-accent-soft transition-all cursor-pointer"
+            onClick={() => window.location.reload()}
+          >
             Retry
           </button>
-          {/* Same-origin proxy path only — never bare Bunny (403 without wet3 Referer). */}
           <a
-            className="ghost-btn"
+            className="border border-border bg-transparent rounded-2xl px-5 py-3.5 font-semibold hover:border-border-strong hover:bg-accent-soft transition-all no-underline text-inherit"
             href={playUrl || src}
             target="_blank"
             rel="noopener"
@@ -332,8 +333,8 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
           </a>
         </div>
       ) : null}
-      <p className="watch-meta">
-        Media <code>{mediaId}</code>
+      <p className="m-0 text-muted text-[0.9rem]">
+        Media <code className="text-[0.85em] text-soft">{mediaId}</code>
       </p>
     </section>
   )

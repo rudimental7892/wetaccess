@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode } from 'react'
+import { ScrollToTop } from './ScrollToTop'
 
 type AppShellProps = {
   children: ReactNode
@@ -11,6 +12,45 @@ type AppShellProps = {
   onLogout?: () => void
 }
 
+function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' }) {
+  const cls = "w-5 h-5"
+  if (name === 'creators') {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    )
+  }
+  if (name === 'twitter') {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+    )
+  }
+  if (name === 'drops') {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+        <line x1="12" y1="22.08" x2="12" y2="12" />
+      </svg>
+    )
+  }
+  // sites
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  )
+}
+
 export function AppShell({
   children,
   onHome,
@@ -21,203 +61,142 @@ export function AppShell({
   onSwitchSite,
   onLogout,
 }: AppShellProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    // Prevent body scroll while drawer open
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [menuOpen])
-
-  // Close drawer when hash/route changes
-  useEffect(() => {
-    const close = () => setMenuOpen(false)
-    window.addEventListener('hashchange', close)
-    return () => window.removeEventListener('hashchange', close)
-  }, [])
-
   return (
-    <div className="app">
-      <header className="app-nav">
-        <div className="app-nav-start">
+    <div className="min-h-svh grid grid-rows-[auto_1fr]">
+      {/* ---- Desktop top nav ---- */}
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-4 px-6 py-3.5 border-b border-border bg-base/82 backdrop-blur-xl backdrop-saturate-[1.4]">
+        <div className="flex items-center gap-3 min-w-0">
           <a
             href="#/"
-            className="app-brand"
-            onClick={() => {
-              setMenuOpen(false)
-              onHome?.()
-            }}
+            className="inline-flex items-center gap-2.5 shrink-0"
+            onClick={() => onHome?.()}
           >
-            <span className="app-brand-mark">WA</span>
-            <span className="app-brand-text">wetaccess</span>
+            <span className="min-w-[34px] h-[34px] px-2 rounded-xl grid place-items-center font-display text-xs font-[900] text-white bg-gradient-to-br from-accent to-[#c4004a] shadow-[0_8px_24px_rgba(224,100,152,0.22)]">
+              WA
+            </span>
+            <span className="hidden md:inline font-display text-[22px] font-[800] tracking-tight">
+              wetaccess
+            </span>
           </a>
-          <nav className="app-nav-tabs app-nav-tabs-desktop" aria-label="Primary">
-            <a
-              href="#/"
-              className={`nav-tab${activeNav === 'creators' ? ' active' : ''}`}
-              aria-current={activeNav === 'creators' ? 'page' : undefined}
-            >
-              Creators
-            </a>
-            <a
-              href="#/twitter"
-              className={`nav-tab${activeNav === 'twitter' ? ' active' : ''}`}
-              aria-current={activeNav === 'twitter' ? 'page' : undefined}
-            >
-              Twitter
-            </a>
-            <a
-              href="#/drops"
-              className={`nav-tab${activeNav === 'drops' ? ' active' : ''}`}
-              aria-current={activeNav === 'drops' ? 'page' : undefined}
-            >
-              Drops
-            </a>
+
+          {/* Desktop nav tabs */}
+          <nav
+            className="hidden md:inline-flex gap-1.5 p-1.5 border border-border rounded-full bg-inset"
+            aria-label="Primary"
+          >
+            {([
+              ['#/', 'creators', 'Creators'],
+              ['#/twitter', 'twitter', 'Twitter'],
+              ['#/drops', 'drops', 'Drops'],
+            ] as const).map(([href, key, label]) => (
+              <a
+                key={key}
+                href={href}
+                className={
+                  activeNav === key
+                    ? 'text-white bg-gradient-to-br from-accent to-[#c4004a] shadow-[0_8px_20px_rgba(224,100,152,0.22)] rounded-full px-4 py-2.5 text-[13px] font-semibold'
+                    : 'text-muted rounded-full px-4 py-2.5 text-[13px] font-semibold hover:text-foreground hover:bg-white/[0.04] transition-all'
+                }
+                aria-current={activeNav === key ? 'page' : undefined}
+              >
+                {label}
+              </a>
+            ))}
           </nav>
+
+          {/* Desktop breadcrumb */}
           {breadcrumb ? (
-            <nav className="breadcrumb breadcrumb-desktop" aria-label="Breadcrumb">
-              <span className="breadcrumb-sep">/</span>
-              <span className="breadcrumb-current">{breadcrumb}</span>
+            <nav
+              className="hidden md:flex items-center gap-2 min-w-0 text-muted text-sm"
+              aria-label="Breadcrumb"
+            >
+              <span className="text-soft">/</span>
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-medium">
+                {breadcrumb}
+              </span>
             </nav>
           ) : null}
         </div>
 
-        <div className="app-nav-actions app-nav-actions-desktop">
+        {/* Desktop actions */}
+        <div className="hidden md:flex flex-wrap items-center justify-end gap-2">
           {onBack && backLabel ? (
-            <button type="button" className="nav-pill" onClick={onBack}>
+            <button
+              type="button"
+              className="border border-border rounded-full px-3.5 py-2 text-xs font-semibold tracking-wide uppercase bg-card hover:border-accent/35 hover:bg-accent-soft hover:text-white transition-all cursor-pointer"
+              onClick={onBack}
+            >
               {backLabel}
             </button>
           ) : null}
           {onSwitchSite ? (
-            <button type="button" className="nav-pill" onClick={onSwitchSite}>
+            <button
+              type="button"
+              className="border border-border rounded-full px-3.5 py-2 text-xs font-semibold tracking-wide uppercase bg-card hover:border-accent/35 hover:bg-accent-soft hover:text-white transition-all cursor-pointer"
+              onClick={onSwitchSite}
+            >
               Switch site
             </button>
           ) : null}
           {onLogout ? (
-            <button type="button" className="nav-pill" onClick={onLogout}>
+            <button
+              type="button"
+              className="border border-border rounded-full px-3.5 py-2 text-xs font-semibold tracking-wide uppercase bg-card hover:border-accent/35 hover:bg-accent-soft hover:text-white transition-all cursor-pointer"
+              onClick={onLogout}
+            >
               Sign out
             </button>
-          ) : (
-            <span className="nav-tag">clone</span>
-          )}
+          ) : null}
         </div>
 
-        <button
-          type="button"
-          className={`nav-hamburger${menuOpen ? ' open' : ''}`}
-          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          aria-expanded={menuOpen}
-          aria-controls="mobile-nav-drawer"
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          <span className="nav-hamburger-bar" />
-          <span className="nav-hamburger-bar" />
-          <span className="nav-hamburger-bar" />
-        </button>
+        {/* Mobile: show breadcrumb inline if present */}
+        {breadcrumb ? (
+          <span className="md:hidden text-sm text-muted overflow-hidden text-ellipsis whitespace-nowrap">
+            {breadcrumb}
+          </span>
+        ) : null}
       </header>
 
-      {/* Mobile drawer */}
-      <div
-        className={`nav-drawer-backdrop${menuOpen ? ' open' : ''}`}
-        aria-hidden={!menuOpen}
-        onClick={() => setMenuOpen(false)}
-      />
-      <aside
-        id="mobile-nav-drawer"
-        className={`nav-drawer${menuOpen ? ' open' : ''}`}
-        aria-hidden={!menuOpen}
+      {/* ---- Main content ---- */}
+      <main className="w-full max-w-[1240px] mx-auto px-3.5 md:px-6 py-4 md:py-7 pb-24 md:pb-12">
+        {children}
+      </main>
+
+      {/* ---- Mobile bottom tab bar ---- */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-stretch justify-around border-t border-border bg-base/92 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+        aria-label="Mobile primary"
       >
-        <div className="nav-drawer-head">
-          <span className="app-brand-mark">WA</span>
-          <strong>Menu</strong>
+        {([
+          { href: '#/', key: 'creators' as const, icon: 'creators' as const, label: 'Creators' },
+          { href: '#/twitter', key: 'twitter' as const, icon: 'twitter' as const, label: 'Twitter' },
+          { href: '#/drops', key: 'drops' as const, icon: 'drops' as const, label: 'Drops' },
+        ]).map(({ href, key, icon, label }) => (
+          <a
+            key={key}
+            href={href}
+            className={`flex flex-col items-center justify-center gap-0.5 py-2.5 px-3 min-w-[60px] text-[10px] font-semibold transition-colors ${
+              activeNav === key ? 'text-accent' : 'text-soft hover:text-foreground'
+            }`}
+            aria-current={activeNav === key ? 'page' : undefined}
+          >
+            <TabIcon name={icon} />
+            {label}
+          </a>
+        ))}
+        {onSwitchSite ? (
           <button
             type="button"
-            className="nav-drawer-close"
-            aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
+            className="flex flex-col items-center justify-center gap-0.5 py-2.5 px-3 min-w-[60px] text-[10px] font-semibold text-soft hover:text-foreground transition-colors cursor-pointer bg-transparent border-none"
+            onClick={onSwitchSite}
           >
-            ×
+            <TabIcon name="sites" />
+            Sites
           </button>
-        </div>
-
-        {breadcrumb ? (
-          <p className="nav-drawer-crumb">{breadcrumb}</p>
         ) : null}
+      </nav>
 
-        <nav className="nav-drawer-links" aria-label="Mobile primary">
-          <a
-            href="#/"
-            className={`nav-drawer-link${activeNav === 'creators' ? ' active' : ''}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            Creators
-          </a>
-          <a
-            href="#/twitter"
-            className={`nav-drawer-link${activeNav === 'twitter' ? ' active' : ''}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            Twitter
-          </a>
-          <a
-            href="#/drops"
-            className={`nav-drawer-link${activeNav === 'drops' ? ' active' : ''}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            Drops
-          </a>
-        </nav>
-
-        <div className="nav-drawer-actions">
-          {onBack && backLabel ? (
-            <button
-              type="button"
-              className="nav-drawer-btn"
-              onClick={() => {
-                setMenuOpen(false)
-                onBack()
-              }}
-            >
-              {backLabel}
-            </button>
-          ) : null}
-          {onSwitchSite ? (
-            <button
-              type="button"
-              className="nav-drawer-btn"
-              onClick={() => {
-                setMenuOpen(false)
-                onSwitchSite()
-              }}
-            >
-              Switch site
-            </button>
-          ) : null}
-          {onLogout ? (
-            <button
-              type="button"
-              className="nav-drawer-btn danger"
-              onClick={() => {
-                setMenuOpen(false)
-                onLogout()
-              }}
-            >
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </aside>
-
-      <main className="page">{children}</main>
+      <ScrollToTop />
     </div>
   )
 }

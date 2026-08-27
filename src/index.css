@@ -1,77 +1,82 @@
-:root {
-  color-scheme: dark;
-  font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  line-height: 1.5;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+@import "tailwindcss";
 
-  --bg: #09090b;
-  --bg-surface: #111116;
-  --bg-card: #17171d;
-  --bg-card-hover: #1d1d25;
-  --bg-inset: #0d0d11;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --text-soft: #71717a;
-  --accent: #ff0055;
-  --accent-hover: #ff3377;
-  --accent-soft: rgba(255, 0, 85, 0.12);
-  --accent-glow: rgba(255, 0, 85, 0.22);
-  --violet: #7f00ff;
-  --violet-soft: rgba(127, 0, 255, 0.14);
-  --danger: #fb7185;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
-  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.28);
-  --shadow-md: 0 18px 48px rgba(0, 0, 0, 0.38);
-  --font-display: 'Outfit', system-ui, sans-serif;
+@theme {
+  --color-base: #0e0c10;
+  --color-surface: #1a1720;
+  --color-card: #2a2630;
+  --color-card-hover: #322e3a;
+  --color-inset: #16131c;
+  --color-accent: #e06498;
+  --color-accent-hover: #e87aaa;
+  --color-accent-soft: rgba(224,100,152,0.12);
+  --color-accent-glow: rgba(224,100,152,0.22);
+  --color-warm: #f2c078;
+  --color-warm-soft: rgba(242,192,120,0.12);
+  --color-foreground: #ede8f0;
+  --color-muted: #8a8492;
+  --color-soft: #6a6470;
+  --color-border: rgba(255,255,255,0.06);
+  --color-border-strong: rgba(255,255,255,0.12);
+  --color-danger: #fb7185;
+  --font-family-display: 'Fraunces', serif;
+  --font-family-sans: 'Manrope', system-ui, sans-serif;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Legacy compat vars for AC/FB/FT/LZ site CSS in App.css */
+    --bg: #0e0c10;
+    --bg-surface: #1a1720;
+    --bg-card: #2a2630;
+    --bg-card-hover: #322e3a;
+    --bg-inset: #16131c;
+    --border: rgba(255,255,255,0.06);
+    --border-strong: rgba(255,255,255,0.12);
+    --text: #ede8f0;
+    --text-muted: #8a8492;
+    --text-soft: #6a6470;
+    --accent: #e06498;
+    --accent-hover: #e87aaa;
+    --accent-soft: rgba(224,100,152,0.12);
+    --accent-glow: rgba(224,100,152,0.22);
+    --violet: #f2c078;
+    --violet-soft: rgba(242,192,120,0.14);
+    --danger: #fb7185;
+    --font-display: 'Fraunces', serif;
+    --radius-sm: 12px;
+    --radius-md: 16px;
+    --radius-lg: 20px;
+    --radius-xl: 24px;
+    --shadow-sm: 0 8px 24px rgba(0,0,0,0.28);
+    --shadow-md: 0 18px 48px rgba(0,0,0,0.38);
+  }
+
+  html, body, #root { height: 100%; }
+  #root { min-height: 100svh; }
+
+  body {
+    margin: 0;
+    overflow-x: hidden;
+    background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(224,100,152,0.10), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 100% 0%, rgba(242,192,120,0.06), transparent 50%), #0e0c10;
+    color: var(--color-foreground);
+    font-family: 'Manrope', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  button, input { font: inherit; }
+  button { color: inherit; }
+  a { color: inherit; text-decoration: none; }
+
+  ::selection {
+    background: rgba(224,100,152,0.35);
+    color: #fff;
+  }
 }
 
-#root {
-  min-height: 100svh;
-}
-
-body {
-  margin: 0;
-  overflow-x: hidden;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 0, 85, 0.14), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(127, 0, 255, 0.1), transparent 50%),
-    var(--bg);
-  color: var(--text);
-  -webkit-tap-highlight-color: transparent;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-button {
-  color: inherit;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-::selection {
-  background: rgba(255, 0, 85, 0.35);
-  color: #fff;
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
 }

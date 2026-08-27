@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { defineConfig, type ProxyOptions } from 'vite'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { createAcProxyMiddleware } from './server/acProxy'
 import { createFbProxyMiddleware } from './server/fbProxy'
@@ -93,7 +94,7 @@ function attachLocalApis() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), attachLocalApis()],
+  plugins: [tailwindcss(), react(), attachLocalApis()],
   server: {
     proxy: wet3Proxy,
   },

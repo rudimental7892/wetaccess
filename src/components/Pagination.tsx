@@ -27,7 +27,7 @@ export function Pagination({
         : `Page ${page}`
       : (
           <>
-            {page} <span className="pagination-of">of</span> {totalPages}
+            {page} <span className="text-soft">of</span> {totalPages}
           </>
         )
   const fillPct =
@@ -39,18 +39,33 @@ export function Pagination({
 
   return (
     <nav
-      className={['pagination', className].filter(Boolean).join(' ')}
+      className={`grid grid-cols-[auto_1fr_auto_auto] max-md:grid-cols-[1fr_1fr] max-md:grid-areas-[track_track/prev_next/label_label] items-center gap-3 max-md:gap-2.5 p-3.5 px-4 max-md:p-3 border border-border rounded-xl bg-surface ${className ?? ''}`}
       aria-label={label}
     >
-      <button type="button" className="btn btn-ghost" onClick={onPrevious} disabled={page === 1}>
-        ← Prev
+      <button
+        type="button"
+        className="border border-border bg-transparent rounded-2xl px-5 py-3.5 max-md:min-h-12 font-semibold hover:border-border-strong hover:bg-accent-soft transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed max-md:[grid-area:prev]"
+        onClick={onPrevious}
+        disabled={page === 1}
+      >
+        &larr; Prev
       </button>
-      <div className="pagination-track" aria-hidden="true">
-        <span className="pagination-fill" style={{ width: `${fillPct}%` }} />
+      <div className="h-1.5 rounded-full bg-inset overflow-hidden max-md:[grid-area:track]" aria-hidden="true">
+        <span
+          className="block h-full rounded-[inherit] bg-gradient-to-r from-accent to-warm"
+          style={{ width: `${fillPct}%` }}
+        />
       </div>
-      <span className="pagination-label">{labelText}</span>
-      <button type="button" className="btn btn-ghost" onClick={onNext} disabled={nextDisabled}>
-        Next →
+      <span className="text-muted text-[13px] tabular-nums whitespace-nowrap max-md:[grid-area:label] max-md:text-center">
+        {labelText}
+      </span>
+      <button
+        type="button"
+        className="border border-border bg-transparent rounded-2xl px-5 py-3.5 max-md:min-h-12 font-semibold hover:border-border-strong hover:bg-accent-soft transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed max-md:[grid-area:next]"
+        onClick={onNext}
+        disabled={nextDisabled}
+      >
+        Next &rarr;
       </button>
     </nav>
   )

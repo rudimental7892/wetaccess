@@ -21,19 +21,27 @@ export function LoginView({ onSuccess }: LoginViewProps) {
   }
 
   return (
-    <div className="gate">
-      <form className="gate-card" onSubmit={onSubmit}>
-        <div className="gate-brand">
-          <span className="gate-mark">WX</span>
+    <div className="min-h-svh grid place-items-center p-6">
+      <form
+        className="w-full max-w-[420px] p-7 border border-border rounded-xl bg-surface/90 shadow-lg grid gap-4"
+        onSubmit={onSubmit}
+      >
+        <div className="flex items-center gap-3.5">
+          <span className="min-w-[42px] h-[42px] px-2.5 rounded-xl grid place-items-center font-display text-[13px] font-[800] text-white bg-gradient-to-br from-accent to-[#c4004a]">
+            WX
+          </span>
           <div>
-            <h1>wetaccess</h1>
-            <p>Sign in to choose a catalog</p>
+            <h1 className="m-0 font-display text-[1.45rem] tracking-tight">wetaccess</h1>
+            <p className="mt-0.5 m-0 text-muted text-[0.92rem]">Sign in to choose a catalog</p>
           </div>
         </div>
 
-        <label className="gate-field">
-          <span>Username</span>
+        <label className="grid gap-1.5">
+          <span className="text-[0.8rem] text-muted font-semibold tracking-wide uppercase">
+            Username
+          </span>
           <input
+            className="w-full p-3 px-3.5 rounded-xl border border-border bg-inset text-foreground outline-none focus:border-accent/45 transition-colors"
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -41,9 +49,12 @@ export function LoginView({ onSuccess }: LoginViewProps) {
           />
         </label>
 
-        <label className="gate-field">
-          <span>Password</span>
+        <label className="grid gap-1.5">
+          <span className="text-[0.8rem] text-muted font-semibold tracking-wide uppercase">
+            Password
+          </span>
           <input
+            className="w-full p-3 px-3.5 rounded-xl border border-border bg-inset text-foreground outline-none focus:border-accent/45 transition-colors"
             type="password"
             autoComplete="current-password"
             value={password}
@@ -52,9 +63,12 @@ export function LoginView({ onSuccess }: LoginViewProps) {
           />
         </label>
 
-        {error ? <p className="gate-error">{error}</p> : null}
+        {error ? <p className="m-0 text-danger text-[0.9rem]">{error}</p> : null}
 
-        <button type="submit" className="gate-submit">
+        <button
+          type="submit"
+          className="border-none rounded-xl p-3 px-4 font-bold cursor-pointer text-white bg-gradient-to-br from-accent to-[#c4004a] hover:brightness-[1.06] transition-all"
+        >
           Continue
         </button>
       </form>
