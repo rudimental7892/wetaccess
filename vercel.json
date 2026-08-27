@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/ft-stream",
+      "destination": "/api/ft?op=stream"
+    },
+    {
       "source": "/wet3-api/(.*)",
       "destination": "/api/wet3-proxy?path=$1"
     },
