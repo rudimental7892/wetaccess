@@ -136,6 +136,25 @@ export function ProfileView({ username }: { username: string }) {
           >
             {avatarLetter}
           </div>
+          <button
+            type="button"
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-semibold border cursor-pointer transition-all ${
+              isFav(`creator:${username}`)
+                ? 'bg-accent/15 border-accent/40 text-accent hover:bg-accent/25'
+                : 'bg-white/[0.06] border-border text-muted hover:border-accent/30 hover:text-accent hover:bg-accent/10'
+            }`}
+            onClick={() => {
+              toggleFav({
+                id: `creator:${username}`,
+                site: 'wetaccess',
+                title: `@${username}`,
+                url: `#/user/${encodeURIComponent(username)}`,
+                meta: !loading ? `${media.length} posts` : undefined,
+              })
+            }}
+          >
+            {isFav(`creator:${username}`) ? '❤ Saved' : '♡ Save creator'}
+          </button>
         </div>
         <div>
           <h1 className="m-0 font-display text-[clamp(1.8rem,4vw,2.6rem)] max-md:text-[1.65rem] max-md:overflow-wrap-anywhere leading-none font-[800] tracking-tight">
