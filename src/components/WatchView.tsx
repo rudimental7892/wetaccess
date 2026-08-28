@@ -7,6 +7,7 @@ import {
   thumbnailUrl,
   type MediaItem,
 } from '../lib/wet3'
+import { useFavorites } from '../lib/favorites'
 
 type WatchViewProps = {
   mediaId: string
@@ -193,6 +194,9 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('Loading stream...')
   const [playUrl, setPlayUrl] = useState<string | null>(null)
+  const { isFav, toggle: toggleFav } = useFavorites('wetaccess')
+  const favId = `media:${mediaId}`
+  const favored = isFav(favId)
   const src = streamUrl(mediaId)
   const poster = posterItem
     ? thumbnailUrl(posterItem)
@@ -333,9 +337,31 @@ export function WatchView({ mediaId, posterItem }: WatchViewProps) {
           </a>
         </div>
       ) : null}
-      <p className="m-0 text-muted text-[0.9rem]">
-        Media <code className="text-[0.85em] text-soft">{mediaId}</code>
-      </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="m-0 text-muted text-[0.9rem]">
+          Media <code className="text-[0.85em] text-soft">{mediaId}</code>
+        </p>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-semibold border cursor-pointer transition-all ${
+            favored
+              ? 'bg-accent/15 border-accent/40 text-accent hover:bg-accent/25'
+              : 'bg-white/[0.06] border-border text-muted hover:border-accent/30 hover:text-accent hover:bg-accent/10'
+          }`}
+          onClick={() => {
+            toggleFav({
+              id: favId,
+              site: 'wetaccess',
+              title: mediaId,
+              thumb: poster,
+              url: `#/watch/${mediaId}`,
+              meta: 'Video',
+            })
+          }}
+        >
+          {favored ? '❤ Saved' : '♡ Save video'}
+        </button>
+      </div>
     </section>
   )
 }

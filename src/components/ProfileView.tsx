@@ -283,7 +283,7 @@ export function ProfileView({ username }: { username: string }) {
                   className={`absolute top-2 left-2 z-[3] w-8 h-8 grid place-items-center rounded-full text-sm border-none cursor-pointer transition-all ${
                     favored
                       ? 'bg-accent/80 text-white opacity-100'
-                      : 'bg-black/50 text-white/70 opacity-0 group-hover:opacity-100'
+                      : 'bg-black/50 text-white/70 max-md:opacity-100 opacity-0 group-hover:opacity-100'
                   } hover:bg-accent hover:text-white`}
                   aria-label={favored ? 'Remove from favorites' : 'Add to favorites'}
                   onClick={() => {
