@@ -213,7 +213,7 @@ function WetAccessFavoritesView() {
           Your favorites
         </h1>
         <p className="mt-3.5 m-0 max-w-[48ch] text-muted text-[15px] max-md:text-sm">
-          {count} saved creator{count !== 1 ? 's' : ''}
+          {count} saved item{count !== 1 ? 's' : ''}
         </p>
       </section>
 

@@ -20,6 +20,7 @@ import {
   thumbnailUrl,
   watchUrl,
 } from '../lib/wet3'
+import { useFavorites } from '../lib/favorites'
 
 type Tab = 'all' | 'images' | 'videos'
 
@@ -36,6 +37,7 @@ export function ProfileView({ username }: { username: string }) {
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const galleryRef = useRef<HTMLElement>(null)
+  const { isFav, toggle: toggleFav } = useFavorites('wetaccess')
 
   useEffect(() => {
     let cancelled = false
@@ -214,8 +216,11 @@ export function ProfileView({ username }: { username: string }) {
 
           {/* Media grid */}
           <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-4 gap-x-3 max-md:gap-3 max-md:gap-x-2.5">
-            {visible.map((item) => (
-              <article key={item.id} className="grid gap-2.5 min-w-0">
+            {visible.map((item) => {
+              const favId = `media:${item.id}`
+              const favored = isFav(favId)
+              return (
+              <article key={item.id} className="group relative grid gap-2.5 min-w-0">
                 {item.media_type === '2' ? (
                   <a
                     href={watchUrl(item.id)}
@@ -254,6 +259,27 @@ export function ProfileView({ username }: { username: string }) {
                     />
                   </a>
                 )}
+                <button
+                  type="button"
+                  className={`absolute top-2 left-2 z-[3] w-8 h-8 grid place-items-center rounded-full text-sm border-none cursor-pointer transition-all ${
+                    favored
+                      ? 'bg-accent/80 text-white opacity-100'
+                      : 'bg-black/50 text-white/70 opacity-0 group-hover:opacity-100'
+                  } hover:bg-accent hover:text-white`}
+                  aria-label={favored ? 'Remove from favorites' : 'Add to favorites'}
+                  onClick={() => {
+                    toggleFav({
+                      id: favId,
+                      site: 'wetaccess',
+                      title: mediaLabel(item),
+                      thumb: thumbnailUrl(item),
+                      url: item.media_type === '2' ? watchUrl(item.id) : imageUrl(item.id),
+                      meta: `${mediaTypeLabel(item.media_type)} by @${username}`,
+                    })
+                  }}
+                >
+                  {favored ? '❤' : '♡'}
+                </button>
                 <div className="grid gap-[3px] px-0.5">
                   <span className="text-[11px] tabular-nums text-soft font-semibold tracking-[0.01em]" title={item.createdAt ?? undefined}>
                     {formatMediaDate(item.createdAt)}
@@ -268,7 +294,8 @@ export function ProfileView({ username }: { username: string }) {
                   ) : null}
                 </div>
               </article>
-            ))}
+              )
+            })}
           </div>
 
           {visible.length === 0 ? (
