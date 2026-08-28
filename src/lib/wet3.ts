@@ -978,7 +978,7 @@ export function parseUserMediaHtml(html: string, username: string): MediaItem[] 
   const items: MediaItem[] = []
   const seen = new Set<string>()
   const tileRe =
-    /href="\/p\/([^"]+)"([\s\S]{0,900}?)(?=href="\/p\/|hx-get=|$)/gi
+    /href="\/p\/([^"]+)"([\s\S]{0,2500}?)(?=href="\/p\/|hx-get=|$)/gi
 
   let match: RegExpExecArray | null
   while ((match = tileRe.exec(html)) !== null) {
