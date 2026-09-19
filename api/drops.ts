@@ -95,31 +95,33 @@ function attrFromOpenTag(openTag: string, name: string): string | null {
 }
 
 function parseDropCard(block: string): Drop | null {
-  const openEnd = block.indexOf('>')
-  if (openEnd < 0) return null
-  const head = block.slice(0, openEnd + 1)
+  const idMatch = block.match(/id="drop-card-(\d+)"/)
+  if (!idMatch) return null
+  const id = Number.parseInt(idMatch[1], 10)
+  if (!Number.isFinite(id) || id <= 0) return null
 
-  const idRaw = attrFromOpenTag(head, 'data-drop-id')
-  const id = Number.parseInt(idRaw ?? '', 10)
-  if (!Number.isFinite(id) || id <= 0) {
-    return null
-  }
+  const clickAttr = block.match(
+    /@click="activeDropId\s*=\s*(\d+);\s*activeDropUsername\s*=\s*'([^']*)';\s*activeDropClicks\s*=\s*(\d+);\s*activeDropReqClicks\s*=\s*(\d+);\s*activeDropNgnPrice\s*=\s*(\d+);\s*activeDropUsdPrice\s*=\s*'([^']*)';\s*dropsModalOpen\s*=\s*true;"/,
+  )
 
-  const unlocked = /\bdrop-unlocked\b/.test(head)
-  const username = attrFromOpenTag(head, 'data-username') ?? ''
-  const title = attrFromOpenTag(head, 'data-title') ?? username
-  const releaseAt = attrFromOpenTag(head, 'data-release-at') ?? ''
+  const username = clickAttr ? clickAttr[2] : ''
+  const clickCount = clickAttr ? Number.parseInt(clickAttr[3], 10) : 0
+  const requiredClicks = clickAttr ? Number.parseInt(clickAttr[4], 10) : 0
+
+  const unlocked = clickCount >= requiredClicks && requiredClicks > 0
+
+  const releaseMatch = block.match(/data-release-at="([^"]+)"/)
+  const releaseAt = releaseMatch ? releaseMatch[1] : ''
 
   const clicks = block.match(/(\d+)\s*\/\s*(\d+)\s*clicks/i)
-  const clickCount = clicks ? Number.parseInt(clicks[1], 10) : 0
-  const requiredClicks = clicks ? Number.parseInt(clicks[2], 10) : 0
+  const finalClickCount = clicks ? Number.parseInt(clicks[1], 10) : clickCount
+  const finalReqClicks = clicks ? Number.parseInt(clicks[2], 10) : requiredClicks
 
   const itemsMeta = block.match(/(\d+)\s*items?/i)
   let itemsCount = itemsMeta ? Number.parseInt(itemsMeta[1], 10) : 0
 
-  const thumbMatch =
-    block.match(/class="drop-thumb"[^>]*src="([^"]+)"/i) ??
-    block.match(/src="([^"]+)"[^>]*class="drop-thumb"/i)
+  const thumbMatch = block.match(/src="(\/previews\/[^"]+)"/i)
+    ?? block.match(/<img[^>]+src="([^"]+)"/i)
   const thumbnail = thumbMatch ? unwrapImageProxy(thumbMatch[1]) : null
 
   const items: DropItem[] = []
@@ -153,12 +155,12 @@ function parseDropCard(block: string): Drop | null {
   return {
     id,
     username,
-    display_name: title,
-    title,
+    display_name: username,
+    title: username,
     thumbnail,
     release_at: releaseAt,
-    required_clicks: requiredClicks,
-    click_count: clickCount,
+    required_clicks: finalReqClicks,
+    click_count: finalClickCount,
     unlocked,
     is_early_unlocked: false,
     time_passed: unlocked,
@@ -169,7 +171,7 @@ function parseDropCard(block: string): Drop | null {
 
 function parseDropsFromHtml(html: string): Drop[] {
   const starts: number[] = []
-  const marker = '<div class="drop-card'
+  const marker = '<div id="drop-card-'
   let from = 0
   while (from < html.length) {
     const idx = html.indexOf(marker, from)

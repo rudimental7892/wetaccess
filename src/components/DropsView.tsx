@@ -300,8 +300,6 @@ export function DropsListView() {
                   drop.unlocked ? '' : 'opacity-[0.92]'
                 }`}
                 href={`#/drops/${drop.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
               >
                 <div className="relative rounded-2xl overflow-hidden bg-inset">
                   <img
@@ -525,8 +523,6 @@ export function DropDetailView({ dropId }: { dropId: number }) {
                 <a
                   className="border-none bg-none p-0 text-accent-hover font-semibold cursor-pointer no-underline hover:underline"
                   href={`#/user/${encodeURIComponent(drop.username)}?from=drops`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                 >
                   @{drop.username}
                 </a>

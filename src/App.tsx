@@ -8,6 +8,7 @@ import { AfricanCastingView } from './components/AfricanCastingView'
 import { FanBusyView } from './components/FanBusyView'
 import { FanTribeView } from './components/FanTribeView'
 import { LeakedZoneView } from './components/LeakedZoneView'
+import { AxesslyView } from './components/AxesslyView'
 import { AppShell } from './components/AppShell'
 import { CreatorsView } from './components/CreatorsView'
 import { ProfileView } from './components/ProfileView'
@@ -16,6 +17,7 @@ import {
   DropsListView,
   navigateToDropsList,
 } from './components/DropsView'
+import { FeedView, navigateToFeed } from './components/FeedView'
 import { LoginView } from './components/LoginView'
 import { SitePicker } from './components/SitePicker'
 import {
@@ -33,6 +35,7 @@ type AppRoute =
   | { view: 'creators' }
   | { view: 'twitter' }
   | { view: 'drops' }
+  | { view: 'feed' }
   | { view: 'favorites' }
   | { view: 'drop'; dropId: number }
   | { view: 'profile'; username: string; from?: 'creators' | 'twitter' | 'drops' }
@@ -79,6 +82,10 @@ function parseRoute(): AppRoute {
 
   if (window.location.hash.startsWith('#/drops')) {
     return { view: 'drops' }
+  }
+
+  if (window.location.hash.startsWith('#/feed')) {
+    return { view: 'feed' }
   }
 
   if (window.location.hash.startsWith('#/favorites')) {
@@ -179,6 +186,15 @@ function App() {
   if (session.site === 'leakedzone') {
     return (
       <LeakedZoneView
+        onSwitchSite={handleSwitchSite}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (session.site === 'axessly') {
+    return (
+      <AxesslyView
         onSwitchSite={handleSwitchSite}
         onLogout={handleLogout}
       />
@@ -353,6 +369,14 @@ function WetaccessApp({ onSwitchSite, onLogout }: WetaccessAppProps) {
     return (
       <AppShell activeNav="drops" onHome={navigateToCreators} {...shellExtra}>
         <DropsListView />
+      </AppShell>
+    )
+  }
+
+  if (route.view === 'feed') {
+    return (
+      <AppShell activeNav="feed" onHome={navigateToFeed} {...shellExtra}>
+        <FeedView />
       </AppShell>
     )
   }

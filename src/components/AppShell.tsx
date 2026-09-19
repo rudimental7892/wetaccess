@@ -4,7 +4,7 @@ import { ScrollToTop } from './ScrollToTop'
 type AppShellProps = {
   children: ReactNode
   onHome?: () => void
-  activeNav?: 'creators' | 'twitter' | 'drops' | 'favorites'
+  activeNav?: 'creators' | 'twitter' | 'drops' | 'feed' | 'favorites'
   breadcrumb?: string
   backLabel?: string
   onBack?: () => void
@@ -13,7 +13,7 @@ type AppShellProps = {
   favCount?: number
 }
 
-function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' | 'favorites' }) {
+function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'feed' | 'sites' | 'favorites' }) {
   const cls = "w-5 h-5"
   if (name === 'creators') {
     return (
@@ -38,6 +38,15 @@ function TabIcon({ name }: { name: 'creators' | 'twitter' | 'drops' | 'sites' | 
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
         <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
         <line x1="12" y1="22.08" x2="12" y2="12" />
+      </svg>
+    )
+  }
+  if (name === 'feed') {
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
       </svg>
     )
   }
@@ -95,6 +104,7 @@ export function AppShell({
           >
             {([
               ['#/', 'creators', 'Creators'],
+              ['#/feed', 'feed', 'Feed'],
               ['#/twitter', 'twitter', 'Twitter'],
               ['#/drops', 'drops', 'Drops'],
               ['#/favorites', 'favorites', favCount ? `Favs (${favCount})` : 'Favs'],
@@ -179,6 +189,7 @@ export function AppShell({
       >
         {([
           { href: '#/', key: 'creators' as const, icon: 'creators' as const, label: 'Creators' },
+          { href: '#/feed', key: 'feed' as const, icon: 'feed' as const, label: 'Feed' },
           { href: '#/twitter', key: 'twitter' as const, icon: 'twitter' as const, label: 'Twitter' },
           { href: '#/drops', key: 'drops' as const, icon: 'drops' as const, label: 'Drops' },
           { href: '#/favorites', key: 'favorites' as const, icon: 'favorites' as const, label: favCount ? `Favs (${favCount})` : 'Favs' },

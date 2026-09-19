@@ -62,6 +62,23 @@ export type DropsResponse = {
   drops: Drop[]
 }
 
+export type FeedItem = {
+  id: string
+  username: string
+  thumbnail: string
+  streamUid: string
+  duration: string
+  locked: boolean
+  hasNewDrop: boolean
+}
+
+export type FeedResponse = {
+  success?: boolean
+  page: number
+  items: FeedItem[]
+  hasMore: boolean
+}
+
 const API_BASE = '/wet3-api'
 const WET3_ORIGIN = 'https://wet3.click'
 
@@ -968,6 +985,37 @@ export async function fetchDrop(
   }
 
   return unlockAndFetchDrop(dropId)
+}
+
+const BUNNY_CDN_HOST = 'vz-2fede3fd-af5.b-cdn.net'
+
+export function feedItemStreamUrl(item: FeedItem): string {
+  if (item.streamUid) {
+    return `${API_BASE}/api/stream-v2/${encodeURIComponent(item.id)}`
+  }
+  return streamUrl(item.id)
+}
+
+export function feedItemThumbnailUrl(item: FeedItem): string {
+  if (item.thumbnail) {
+    return item.thumbnail
+  }
+  if (item.streamUid) {
+    return `https://${BUNNY_CDN_HOST}/${item.streamUid}/preview.webp`
+  }
+  return placeholderImage()
+}
+
+export function feedItemWatchUrl(item: FeedItem): string {
+  return `#/watch/${encodeURIComponent(item.id)}`
+}
+
+export async function fetchFeed(page = 1): Promise<FeedResponse> {
+  const response = await fetch(`/api/feed?page=${Math.max(1, Math.floor(page))}`)
+  if (!response.ok) {
+    throw new Error(`Feed request failed (${response.status})`)
+  }
+  return (await response.json()) as FeedResponse
 }
 
 /**

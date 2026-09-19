@@ -6,8 +6,10 @@ import { createAcProxyMiddleware } from './server/acProxy'
 import { createFbProxyMiddleware } from './server/fbProxy'
 import { createFtProxyMiddleware } from './server/ftProxy'
 import { createLzProxyMiddleware } from './server/lzProxy'
+import { createAxProxyMiddleware } from './server/axProxy'
 import { createScProxyMiddleware } from './server/scProxy'
 import { createDropsMiddleware } from './server/dropsApi'
+import { createFeedMiddleware } from './server/feedApi'
 import { createDurationMiddleware } from './server/wet3Duration'
 import { createHlsProxyMiddleware } from './server/hlsProxy'
 import { createStreamRedirectMiddleware } from './server/streamProxy'
@@ -73,8 +75,10 @@ function attachLocalApis() {
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())
       server.middlewares.use(createLzProxyMiddleware())
+      server.middlewares.use(createAxProxyMiddleware())
       server.middlewares.use(createScProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
+      server.middlewares.use(createFeedMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())
       server.middlewares.use(createHlsProxyMiddleware())
@@ -85,8 +89,10 @@ function attachLocalApis() {
       server.middlewares.use(createFbProxyMiddleware())
       server.middlewares.use(createFtProxyMiddleware())
       server.middlewares.use(createLzProxyMiddleware())
+      server.middlewares.use(createAxProxyMiddleware())
       server.middlewares.use(createScProxyMiddleware())
       server.middlewares.use(createDropsMiddleware())
+      server.middlewares.use(createFeedMiddleware())
       server.middlewares.use(createStreamRedirectMiddleware())
       server.middlewares.use(createDurationMiddleware())
       server.middlewares.use(createHlsProxyMiddleware())
