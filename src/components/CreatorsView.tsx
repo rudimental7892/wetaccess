@@ -152,7 +152,12 @@ export function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean })
   )
 
   const handleImageError = (event: SyntheticEvent<HTMLImageElement>) => {
-    event.currentTarget.src = placeholderImage()
+    const img = event.currentTarget
+    const username = img.dataset.username ?? '?'
+    const letter = username.charAt(0).toUpperCase()
+    const hue = (username.charCodeAt(0) * 37 + (username.charCodeAt(1) || 0) * 11) % 360
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="hsl(${hue},40%,25%)"/><text x="100" y="115" font-family="system-ui,sans-serif" font-size="90" font-weight="700" fill="hsl(${hue},60%,75%)" text-anchor="middle">${letter}</text></svg>`
+    img.src = `data:image/svg+xml,${encodeURIComponent(svg)}`
   }
 
   return (
@@ -243,6 +248,7 @@ export function CreatorsView({ twitterOnly = false }: { twitterOnly?: boolean })
                   src={wet3AssetUrl(creator.p)}
                   alt=""
                   loading="lazy"
+                  data-username={creator.u}
                   onError={handleImageError}
                 />
                 <div className="grid gap-1 min-w-0">

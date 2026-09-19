@@ -203,7 +203,7 @@ export function thumbnailUrl(item: MediaItem): string {
 }
 
 export function placeholderImage(): string {
-  return `${API_BASE}/blog-placeholder-3.jpg`
+  return `${API_BASE}/placeholder.jpg`
 }
 
 /** Recover a publish/upload date from wet3/AAF/YouFanly asset paths. */
