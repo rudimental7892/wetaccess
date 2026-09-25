@@ -90,6 +90,20 @@ export function SitePicker({ onPick, onLogout }: SitePickerProps) {
             </span>
           </button>
 
+          <button
+            type="button"
+            className="grid gap-2 justify-items-start text-left p-4.5 px-4 rounded-2xl border border-border bg-card cursor-pointer text-inherit hover:border-accent/35 hover:bg-card-hover transition-all"
+            onClick={() => onPick('axessly')}
+          >
+            <span className="site-card-mark ax min-w-[42px] h-[42px] px-2.5 rounded-xl grid place-items-center font-display text-[13px] font-[800] text-white bg-gradient-to-br from-[#2563eb] to-[#1d4ed8] text-[#eff6ff]">
+              AX
+            </span>
+            <span className="font-display text-[1.1rem] font-bold">Axessly</span>
+            <span className="text-muted text-[0.88rem] leading-snug">
+              57% premium posts unlocked -- CF Stream HLS, no signed URLs
+            </span>
+          </button>
+
         </div>
 
         <button
