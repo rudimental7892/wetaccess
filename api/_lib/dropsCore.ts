@@ -81,10 +81,6 @@ function unwrapImageProxy(src: string): string {
   return decoded
 }
 
-function attrFromOpenTag(openTag: string, name: string): string | null {
-  const match = openTag.match(new RegExp(`${name}="([^"]*)"`, 'i'))
-  return match ? decodeHtmlEntities(match[1]) : null
-}
 
 function parseDropCard(block: string): Drop | null {
   const idMatch = block.match(/id="drop-card-(\d+)"/)

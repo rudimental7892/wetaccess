@@ -10,7 +10,6 @@ import { Pagination } from './Pagination'
 import {
   type Creator,
   fetchCreators,
-  placeholderImage,
   wet3AssetUrl,
 } from '../lib/wet3'
 import { useFavorites } from '../lib/favorites'
