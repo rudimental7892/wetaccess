@@ -40,7 +40,7 @@ export async function fetchAcCatalog(
   offset: number,
   amount: number,
 ): Promise<CatalogResponse> {
-  const res = await fetch(`/api/ac-catalog?offset=${offset}&amount=${amount}`)
+  const res = await fetch(`/api/ac?op=catalog&offset=${offset}&amount=${amount}`)
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(body.error ?? `Catalog HTTP ${res.status}`)
@@ -52,7 +52,7 @@ export async function fetchAcEmbed(id: string): Promise<EmbedResponse> {
   let lastErr = 'Embed request failed'
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(`/api/ac-embed?id=${encodeURIComponent(id)}`)
+      const res = await fetch(`/api/ac?op=embed&id=${encodeURIComponent(id)}`)
       const body = (await res.json()) as EmbedResponse & { error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       return body
